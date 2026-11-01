@@ -54,17 +54,33 @@ function sheepPart(parent: THREE.Group, color: string, position: [number, number
   return part;
 }
 
+function sheepCurl(parent: THREE.Group, x: number): void {
+  const curl = new THREE.Mesh(new THREE.TorusGeometry(.27, .15, 8, 20), new THREE.MeshStandardMaterial({ color: '#75007e', roughness: .74 }));
+  curl.position.set(x, 1.77, 1.14);
+  curl.rotation.z = x < 0 ? -.35 : .35;
+  curl.castShadow = true;
+  parent.add(curl);
+  sheepPart(parent, '#cb39cb', [x - .07, 1.88, 1.27], [.12, .11, .06]);
+}
+
 function createGuideSheep(): { group: THREE.Group; feet: THREE.Mesh[] } {
   const group = new THREE.Group();
-  sheepPart(group, '#fff7df', [0, 1.2, 0], [1.15, .78, .78]);
-  for (const [x, y, z] of [[-.65, 1.6, -.35], [0, 1.8, -.4], [.65, 1.6, -.35], [-.6, 1.5, .35], [.6, 1.5, .35]])
-    sheepPart(group, '#fffaf0', [x, y, z], [.54, .52, .52]);
-  sheepPart(group, '#524944', [0, 1.35, .83], [.56, .55, .38]);
-  sheepPart(group, '#fffaf0', [0, 1.83, .65], [.56, .35, .36]);
-  for (const x of [-.36, .36]) sheepPart(group, '#574c44', [x, 1.45, .53], [.28, .18, .2]);
-  for (const x of [-.2, .2]) sheepPart(group, '#fff', [x, 1.48, 1.13], [.12, .15, .06]);
-  for (const x of [-.2, .2]) sheepPart(group, '#211d1c', [x, 1.48, 1.18], [.06, .08, .04]);
-  const feet = [-.65, .65].flatMap(x => [-.4, .4].map(z => sheepPart(group, '#524944', [x, .44, z], [.2, .45, .2])));
+  sheepPart(group, '#1d1521', [0, 1.2, 0], [1.21, .86, .84]);
+  sheepPart(group, '#fff1a0', [0, 1.29, 0], [1.14, .8, .79]);
+  sheepPart(group, '#aaa47a', [0, .8, .31], [.97, .42, .54]);
+  for (const [x, y, z] of [[-.7, 1.67, -.22], [0, 1.86, -.36], [.7, 1.67, -.22], [-.66, 1.65, .37], [.66, 1.65, .37]] as [number, number, number][])
+    sheepPart(group, '#fff5ba', [x, y, z], [.47, .42, .45]);
+  sheepPart(group, '#1d1521', [0, 1.43, .83], [.57, .6, .35]);
+  sheepPart(group, '#ffbc84', [0, 1.43, .9], [.51, .52, .36]);
+  sheepPart(group, '#ff9a68', [0, 1.18, 1.2], [.47, .27, .28]);
+  sheepPart(group, '#fff3b8', [0, 1.91, .73], [.59, .35, .36]);
+  for (const x of [-.42, .42]) sheepCurl(group, x);
+  for (const x of [-.22, .22]) {
+    sheepPart(group, '#1d1521', [x, 1.56, 1.19], [.17, .22, .08]);
+    sheepPart(group, '#fffaf0', [x, 1.57, 1.25], [.12, .16, .07]);
+    sheepPart(group, '#1d1521', [x + .025, 1.55, 1.31], [.055, .09, .04]);
+  }
+  const feet = [-.64, .64].flatMap(x => [-.38, .38].map(z => sheepPart(group, '#ed8958', [x, .37, z], [.17, .34, .16])));
   group.scale.setScalar(5);
   return { group, feet };
 }

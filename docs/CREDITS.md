@@ -10,4 +10,4 @@ This focused CampusExplorer build and its schematic campus data were created dur
 
 No OpenAI, university, or FindUCL endorsement is implied.
 
-The macOS desktop pet engine in `native-pet/` is adapted from [DesktopPetMac](https://github.com/iappyx/DesktopPetMac), MIT licensed, with its [LICENSE](../native-pet/LICENSE) included. That port builds on [desktopPet](https://github.com/Adrianotiger/desktopPet). Its sheep animation is downloaded at runtime from the upstream pet catalog and is not bundled here. The 3D sheep model and tour bridge were made for this build.
+The macOS desktop pet engine in `native-pet/` is adapted from [DesktopPetMac](https://github.com/iappyx/DesktopPetMac), MIT licensed, with its [LICENSE](../native-pet/LICENSE) included. That port builds on [desktopPet](https://github.com/Adrianotiger/desktopPet). Its sheep animation is downloaded at runtime from the upstream pet catalog and is not bundled here. The original eSheep sprite is credited there to LiL_Stenly; the 3D sheep made for this build echoes its pale yellow wool, peach face, purple curl and orange feet. The tour bridge was made for this build.
