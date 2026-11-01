@@ -42,7 +42,7 @@ swift run
 
 The sheep downloads its animation from the credited upstream catalog on first launch. Right-click the sheep or use its menu-bar paw icon and choose **Lead CampusExplorer tour**. It leaves the desktop, appears beside the selected building in the 3D scene, and leads the six-stop tour. Choose **Exit tour** to bring it back. The menu-bar **Return to desktop** item also restores it. If the web app runs on another port, use `CAMPUS_URL=http://127.0.0.1:3001 swift run`, replacing 3001 with that port. In a browser without the native app, **🐑 Follow Woolly** runs the same tour.
 
-[Watch the 43-second sheep-led 3D tour](demo/woolly-3d-tour.mp4). The clip shows the browser half of the handoff; the native desktop pet runs locally on macOS.
+[Watch the sheep-led 3D tour](demo/woolly-3d-tour.mp4). The clip shows the browser half of the handoff; the native desktop pet runs locally on macOS.
 
 This build uses a local loopback bridge between the two apps. It does not claim direct OpenAI Dot or Pet account integration; no supported API for Dot activity subscriptions or pet embedding was confirmed for this build.
 
