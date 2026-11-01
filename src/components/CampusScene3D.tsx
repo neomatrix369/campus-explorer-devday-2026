@@ -413,7 +413,8 @@ function makeScene(container: HTMLDivElement, labels: HTMLDivElement, campus: Ca
       const building = campus.buildings.find(item => item.id === buildingId);
       if (!building) return;
       desiredTarget = new THREE.Vector3(building.position[0], building.dimensions[1] * .45, building.position[1]);
-      desiredCamera = new THREE.Vector3(building.position[0] + 41, building.dimensions[1] + 45, building.position[1] + 55);
+      const zoom = container.clientWidth < 600 ? .65 : 1;
+      desiredCamera = new THREE.Vector3(building.position[0] + 41 * zoom, building.dimensions[1] + 45 * zoom, building.position[1] + 55 * zoom);
     },
     reset: () => { desiredTarget = new THREE.Vector3(0, 4, 0); desiredCamera = container.clientWidth < 760 ? new THREE.Vector3(85, 220, 230) : new THREE.Vector3(85, 145, 155); },
     capture: () => { renderer.render(scene, camera); return renderer.domElement.toDataURL('image/png'); },

@@ -274,6 +274,7 @@ h1, h2, h3 { font-family: var(--font-display); letter-spacing: -.03em; }
   .map-pin { font-size: 9px; padding: 5px 6px; max-width: 130px; overflow: hidden; }
   .map-pin span:nth-child(2) { overflow: hidden; text-overflow: ellipsis; }
   .inspector { top: auto; right: 8px; bottom: 68px; left: 8px; width: auto; height: min(42vh, 440px); padding: 13px; z-index: 18; }
+  .app-shell[data-pet-playing="true"] .inspector { display: none; }
   .inspector-heading h2 { font-size: 18px; }
   .inspector .stack-preview, .inspector .inspector-note { display: none; }
   .view-controls { bottom: 72px; font-size: 10px; }

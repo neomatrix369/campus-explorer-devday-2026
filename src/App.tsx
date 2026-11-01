@@ -193,6 +193,7 @@ export default function App() {
   const startTour = (loop: boolean) => { setToolPanel('none'); setFloorOpen(false); setTourIndex(0); setTourLoop(loop); setTourStarted(true); setTourPlaying(true); };
   const startPetTour = () => {
     setPetTour(true);
+    setRecommendation(null);
     startTour(false);
     void fetch('/api/pet/mode', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'tour' }) }).catch(() => undefined);
   };
@@ -202,12 +203,26 @@ export default function App() {
     if (petTour) void fetch('/api/pet/mode', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'desktop' }) }).catch(() => undefined);
     setPetTour(false);
   };
+  const woollysPick = () => {
+    setTourPlaying(false);
+    void ask('quiet seat with charging and water');
+  };
+  const surpriseStop = () => {
+    setRecommendation(null);
+    setTourPlaying(true);
+    setTourIndex(index => (index + 1 + Math.floor(Math.random() * (TOUR_STOPS.length - 1))) % TOUR_STOPS.length);
+    soundRef.current?.cue(920);
+  };
   useEffect(() => {
     const url = new URL(window.location.href);
-    if (url.searchParams.get('sheepTour') !== '1') return;
+    const tour = url.searchParams.get('sheepTour') === '1';
+    const find = url.searchParams.get('sheepFind') === '1';
+    if (!tour && !find) return;
     url.searchParams.delete('sheepTour');
+    url.searchParams.delete('sheepFind');
     window.history.replaceState(null, '', url);
-    startPetTour();
+    if (tour) startPetTour();
+    else void ask('quiet seat with charging and water');
   }, []);
   const toggleSound = () => { const next = soundMode === 'off' ? 'lofi' : soundMode === 'lofi' ? 'rain' : 'off'; setSoundMode(next); soundRef.current?.setMode(next); };
   const exportPdf = () => downloadBlob(campusPdf(university, campus, hour) as BlobPart, 'application/pdf', `${campus.id}-schematic-map.pdf`);
@@ -254,7 +269,7 @@ export default function App() {
     } catch (error) { setLabMessage((error as Error).message); }
   };
 
-  return <main className="app-shell" data-campus={campusId} data-phase={phase}>
+  return <main className="app-shell" data-campus={campusId} data-phase={phase} data-pet-playing={petTour && tourPlaying}>
     <header className="topbar">
       <div className="brand"><span className="brand-mark"><Compass size={23} strokeWidth={2.5} /></span><span><strong>CampusExplorer</strong><small>Find a quiet seat before you walk there</small></span></div>
       <nav className="university-tabs" aria-label="University">{UNIVERSITIES.map(item => <button key={item.id} className={university.id === item.id ? 'active' : ''} onClick={() => chooseCampus(item.campuses[0].id)} aria-pressed={university.id === item.id}>{item.shortName}</button>)}</nav>
@@ -269,9 +284,9 @@ export default function App() {
     <div className="map-title"><span className="eyebrow">Explore in 3D</span><strong>{university.shortName} · {campus.name}</strong><span>{campus.location}</span></div>
     <div className="view-controls"><button onClick={() => sceneRef.current?.reset()}><RotateCcw size={16} /> Overview</button><span>Drag to rotate · Scroll to zoom</span></div>
 
-    {tourStarted && <div className="tour-banner" role="status"><span className="tour-progress">{petTour ? '🐑' : `${tourIndex + 1}/${TOUR_STOPS.length}`}</span><div><small>{petTour ? tourPlaying ? 'Woolly is leading' : 'Woolly is waiting' : tourPlaying ? 'Guided tour' : 'Tour paused'}</small><strong>{TOUR_STOPS[tourIndex].title}</strong></div><button onClick={() => setTourIndex(index => (index - 1 + TOUR_STOPS.length) % TOUR_STOPS.length)} aria-label="Previous tour stop"><SkipBack size={17} /></button><button onClick={() => setTourPlaying(value => !value)} aria-label={tourPlaying ? 'Pause tour' : 'Resume tour'}>{tourPlaying ? <Pause size={17} /> : <Play size={17} />}</button><button onClick={() => setTourIndex(index => (index + 1) % TOUR_STOPS.length)} aria-label="Next tour stop"><SkipForward size={17} /></button><button onClick={() => { setTourIndex(0); setTourPlaying(true); }} aria-label="Replay tour"><RotateCcw size={16} /></button><button onClick={() => setTourVoice(value => !value)} aria-label={tourVoice ? 'Mute tour voice' : 'Enable tour voice'}>{tourVoice ? <Volume2 size={16} /> : <VolumeX size={16} />}</button><button onClick={leaveTour} aria-label="Exit tour"><X size={16} /></button></div>}
+    {tourStarted && <div className="tour-banner" role="status"><span className="tour-progress">{petTour ? '🐑' : `${tourIndex + 1}/${TOUR_STOPS.length}`}</span><div><small>{petTour ? recommendation ? 'Woolly found a quiet spot' : tourPlaying ? 'Woolly is leading' : 'Woolly is waiting' : tourPlaying ? 'Guided tour' : 'Tour paused'}</small><strong>{petTour && recommendation?.match ? `${recommendation.match.building.name} · ${recommendation.match.floor.name}` : TOUR_STOPS[tourIndex].title}</strong></div><button onClick={() => setTourIndex(index => (index - 1 + TOUR_STOPS.length) % TOUR_STOPS.length)} aria-label="Previous tour stop"><SkipBack size={17} /></button><button onClick={() => setTourPlaying(value => !value)} aria-label={tourPlaying ? 'Pause tour' : 'Resume tour'}>{tourPlaying ? <Pause size={17} /> : <Play size={17} />}</button><button onClick={() => setTourIndex(index => (index + 1) % TOUR_STOPS.length)} aria-label="Next tour stop"><SkipForward size={17} /></button><button onClick={petTour ? surpriseStop : () => { setTourIndex(0); setTourPlaying(true); }} aria-label={petTour ? 'Surprise me with a tour stop' : 'Replay tour'}><RotateCcw size={16} /></button><button onClick={() => setTourVoice(value => !value)} aria-label={tourVoice ? 'Mute tour voice' : 'Enable tour voice'}>{tourVoice ? <Volume2 size={16} /> : <VolumeX size={16} />}</button><button onClick={leaveTour} aria-label="Exit tour"><X size={16} /></button></div>}
 
-    <div className="bottom-dock" aria-label="Map controls"><button className={heatmap ? 'active' : ''} onClick={() => setHeatmap(value => !value)} aria-pressed={heatmap}><Layers3 size={17} /> Heatmap</button><button className={flow ? 'active' : ''} onClick={() => setFlow(value => !value)} aria-pressed={flow}><Sparkles size={17} /> Flow</button><span className="dock-divider" /><button onClick={() => tourStarted ? setTourPlaying(value => !value) : startPetTour()}>{tourPlaying ? <Pause size={17} /> : <Play size={17} />} {tourPlaying ? 'Pause tour' : tourStarted ? 'Resume tour' : '🐑 Follow Woolly'}</button><button className={soundMode !== 'off' ? 'active' : ''} onClick={toggleSound} aria-label={`Sound: ${soundMode}. Change soundscape`}>{soundMode === 'off' ? <VolumeX size={17} /> : <Music2 size={17} />} {soundMode === 'off' ? 'Sound off' : soundMode === 'lofi' ? 'Lo-fi' : 'Rain'}</button><span className="dock-divider" /><button onClick={() => setToolPanel(toolPanel === 'photo' ? 'none' : 'photo')}><Camera size={17} /> Photos</button><button onClick={() => setToolPanel(toolPanel === 'exports' ? 'none' : 'exports')}><Download size={17} /> Export</button><button onClick={() => setToolPanel(toolPanel === 'map-lab' ? 'none' : 'map-lab')}><Map size={17} /> Map lab</button></div>
+    <div className="bottom-dock" aria-label="Map controls"><button className={heatmap ? 'active' : ''} onClick={() => setHeatmap(value => !value)} aria-pressed={heatmap}><Layers3 size={17} /> Heatmap</button><button className={flow ? 'active' : ''} onClick={() => setFlow(value => !value)} aria-pressed={flow}><Sparkles size={17} /> Flow</button><span className="dock-divider" /><button onClick={() => tourStarted ? setTourPlaying(value => !value) : startPetTour()}>{tourPlaying ? <Pause size={17} /> : <Play size={17} />} {tourPlaying ? 'Pause tour' : tourStarted ? 'Resume tour' : '🐑 Follow Woolly'}</button>{petTour && <button onClick={woollysPick}><Compass size={17} /> Woolly's quiet pick</button>}<button className={soundMode !== 'off' ? 'active' : ''} onClick={toggleSound} aria-label={`Sound: ${soundMode}. Change soundscape`}>{soundMode === 'off' ? <VolumeX size={17} /> : <Music2 size={17} />} {soundMode === 'off' ? 'Sound off' : soundMode === 'lofi' ? 'Lo-fi' : 'Rain'}</button><span className="dock-divider" /><button onClick={() => setToolPanel(toolPanel === 'photo' ? 'none' : 'photo')}><Camera size={17} /> Photos</button><button onClick={() => setToolPanel(toolPanel === 'exports' ? 'none' : 'exports')}><Download size={17} /> Export</button><button onClick={() => setToolPanel(toolPanel === 'map-lab' ? 'none' : 'map-lab')}><Map size={17} /> Map lab</button></div>
 
     {toolPanel !== 'none' && <div className="tool-drawer panel" role="dialog" aria-label={toolPanel === 'photo' ? 'Photo studio' : toolPanel === 'exports' ? 'Map exports' : 'Map lab'}><div className="tool-heading"><strong>{toolPanel === 'photo' ? 'Photo studio' : toolPanel === 'exports' ? 'Take this map with you' : 'Map lab'}</strong><button className="icon-button" onClick={() => setToolPanel('none')} aria-label="Close tools"><X size={18} /></button></div>
       {toolPanel === 'exports' && <div className="tool-content"><p>Download the current schematic and open the official university map to check details.</p><button className="tool-action" onClick={exportPdf}><FileText size={20} /><span><strong>Vector PDF</strong><small>Buildings, floor counts and estimated occupancy</small></span><Download size={16} /></button><button className="tool-action" onClick={exportGeo}><FileJson size={20} /><span><strong>GeoJSON</strong><small>Approximate building footprints</small></span><Download size={16} /></button><a className="tool-action" href={campus.sourceUrl} target="_blank" rel="noreferrer"><Map size={20} /><span><strong>Official campus map</strong><small>{university.name}</small></span><ArrowUpRight size={16} /></a></div>}

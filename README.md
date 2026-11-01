@@ -40,7 +40,7 @@ cd native-pet
 swift run
 ```
 
-The sheep downloads its animation from the credited upstream catalog on first launch. Right-click the sheep or use its menu-bar paw icon and choose **Lead CampusExplorer tour**. It leaves the desktop, appears beside the selected building in the 3D scene, and leads the six-stop tour. Choose **Exit tour** to bring it back. The menu-bar **Return to desktop** item also restores it. If the web app runs on another port, use `CAMPUS_URL=http://127.0.0.1:3001 swift run`, replacing 3001 with that port. In a browser without the native app, **🐑 Follow Woolly** runs the same tour.
+The sheep downloads its animation from the credited upstream catalog on first launch. It starts at 2× size (80 points for the default sheep); use the menu-bar **Size** menu to choose 1×–4×. Right-click the sheep or use its menu-bar paw icon and choose **Lead CampusExplorer tour**. It leaves the desktop, appears beside the selected building in the 3D scene, and leads the six-stop tour. During the tour, **Woolly's quiet pick** finds a study floor and **Surprise me** jumps to another stop. Choose **Exit tour** to bring it back. The menu-bar **Return to desktop** item also restores it. **Find a quiet study spot** in the pet menu opens a recommended place directly. If the web app runs on another port, use `CAMPUS_URL=http://127.0.0.1:3001 swift run`, replacing 3001 with that port. In a browser without the native app, **🐑 Follow Woolly** runs the same tour.
 
 [Watch the sheep-led 3D tour](demo/woolly-3d-tour.mp4). The clip shows the browser half of the handoff; the native desktop pet runs locally on macOS.
 
