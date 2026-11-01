@@ -29,6 +29,22 @@ app.get('/api/health', (_request, response) => {
   response.json({ ok: true, mode: apiKey ? 'model-enabled' : 'local' });
 });
 
+let petMode: 'desktop' | 'tour' = 'desktop';
+const localPetRequest = (address: string | undefined): boolean =>
+  address === '127.0.0.1' || address === '::1' || address === '::ffff:127.0.0.1';
+
+app.get('/api/pet/mode', (request, response) => {
+  if (!localPetRequest(request.socket.remoteAddress)) return response.sendStatus(403);
+  return response.json({ mode: petMode });
+});
+
+app.post('/api/pet/mode', (request, response) => {
+  if (!localPetRequest(request.socket.remoteAddress)) return response.sendStatus(403);
+  if (request.body?.mode !== 'desktop' && request.body?.mode !== 'tour') return response.status(400).json({ error: 'Invalid pet mode.' });
+  petMode = request.body.mode;
+  return response.json({ mode: petMode });
+});
+
 app.post('/api/ai/concierge', async (request, response) => {
   const query = typeof request.body?.query === 'string' ? request.body.query.trim().slice(0, 240) : '';
   const campusId = typeof request.body?.campusId === 'string' ? request.body.campusId : '';

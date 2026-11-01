@@ -17,6 +17,7 @@ interface SceneProps {
   selectedFloor: string | null;
   heatmap: boolean;
   flow: boolean;
+  petGuide: boolean;
   onSelect: (id: string) => void;
 }
 
@@ -24,7 +25,7 @@ type SceneRuntime = {
   focus: (buildingId: string) => void;
   reset: () => void;
   capture: () => string | null;
-  update: (props: Pick<SceneProps, 'hour' | 'selectedId' | 'selectedFloor' | 'heatmap' | 'flow'>) => void;
+  update: (props: Pick<SceneProps, 'hour' | 'selectedId' | 'selectedFloor' | 'heatmap' | 'flow' | 'petGuide'>) => void;
   dispose: () => void;
 };
 
@@ -38,6 +39,30 @@ function box(w: number, h: number, d: number, color: THREE.ColorRepresentation, 
   mesh.castShadow = false;
   mesh.receiveShadow = true;
   return mesh;
+}
+
+function sheepPart(parent: THREE.Group, color: string, position: [number, number, number], scale: [number, number, number]): THREE.Mesh {
+  const part = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 12), new THREE.MeshStandardMaterial({ color, roughness: .9 }));
+  part.position.set(...position);
+  part.scale.set(...scale);
+  part.castShadow = true;
+  parent.add(part);
+  return part;
+}
+
+function createGuideSheep(): { group: THREE.Group; feet: THREE.Mesh[] } {
+  const group = new THREE.Group();
+  sheepPart(group, '#fff7df', [0, 1.2, 0], [1.15, .78, .78]);
+  for (const [x, y, z] of [[-.65, 1.6, -.35], [0, 1.8, -.4], [.65, 1.6, -.35], [-.6, 1.5, .35], [.6, 1.5, .35]])
+    sheepPart(group, '#fffaf0', [x, y, z], [.54, .52, .52]);
+  sheepPart(group, '#524944', [0, 1.35, .83], [.56, .55, .38]);
+  sheepPart(group, '#fffaf0', [0, 1.83, .65], [.56, .35, .36]);
+  for (const x of [-.36, .36]) sheepPart(group, '#574c44', [x, 1.45, .53], [.28, .18, .2]);
+  for (const x of [-.2, .2]) sheepPart(group, '#fff', [x, 1.48, 1.13], [.12, .15, .06]);
+  for (const x of [-.2, .2]) sheepPart(group, '#211d1c', [x, 1.48, 1.18], [.06, .08, .04]);
+  const feet = [-.65, .65].flatMap(x => [-.4, .4].map(z => sheepPart(group, '#524944', [x, .44, z], [.2, .45, .2])));
+  group.scale.setScalar(3.5);
+  return { group, feet };
 }
 
 function facadeTexture(color: string, glass: boolean): THREE.CanvasTexture {
@@ -263,8 +288,11 @@ function makeScene(container: HTMLDivElement, labels: HTMLDivElement, campus: Ca
   const ring = new THREE.Mesh(new THREE.RingGeometry(10.5, 11.2, 64), new THREE.MeshBasicMaterial({ color: '#564be3', transparent: true, opacity: .55, side: THREE.DoubleSide, depthWrite: false }));
   ring.rotation.x = -Math.PI / 2;
   scene.add(ring);
+  const sheep = createGuideSheep();
+  sheep.group.visible = false;
+  scene.add(sheep.group);
 
-  let state: Pick<SceneProps, 'hour' | 'selectedId' | 'selectedFloor' | 'heatmap' | 'flow'> = { hour: 16, selectedId: null, selectedFloor: null, heatmap: false, flow: true };
+  let state: Pick<SceneProps, 'hour' | 'selectedId' | 'selectedFloor' | 'heatmap' | 'flow' | 'petGuide'> = { hour: 16, selectedId: null, selectedFloor: null, heatmap: false, flow: true, petGuide: false };
   let desiredCamera: THREE.Vector3 | null = null;
   let desiredTarget: THREE.Vector3 | null = null;
   let frame = 0;
@@ -344,9 +372,17 @@ function makeScene(container: HTMLDivElement, labels: HTMLDivElement, campus: Ca
     controls.update();
     const selected = campus.buildings.find(building => building.id === state.selectedId);
     ring.visible = Boolean(selected);
+    sheep.group.visible = Boolean(state.petGuide && selected);
     if (selected) {
       ring.position.set(selected.position[0], .5, selected.position[1]);
       ring.scale.setScalar(1 + Math.sin(frame * .045) * .06);
+      if (sheep.group.visible) {
+        const destination = new THREE.Vector3(selected.position[0] + selected.dimensions[0] / 2 + 5, .2, selected.position[1] + selected.dimensions[2] / 2 + 5);
+        if (sheep.group.position.lengthSq() === 0) sheep.group.position.copy(destination);
+        sheep.group.position.lerp(destination, .09);
+        sheep.group.position.y = .2 + (reducedMotion ? 0 : Math.abs(Math.sin(frame * .12)) * .18);
+        sheep.feet.forEach((foot, index) => { foot.rotation.x = reducedMotion ? 0 : Math.sin(frame * .12 + index * Math.PI) * .35; });
+      }
     }
     flowDots.visible = state.flow && !reducedMotion;
     if (flowDots.visible) {
@@ -423,8 +459,8 @@ export const CampusScene3D = forwardRef<SceneHandle, SceneProps>(function Campus
   }, [props.campus]);
 
   useEffect(() => {
-    runtime.current?.update({ hour: props.hour, selectedId: props.selectedId, selectedFloor: props.selectedFloor, heatmap: props.heatmap, flow: props.flow });
-  }, [props.hour, props.selectedId, props.selectedFloor, props.heatmap, props.flow, props.campus]);
+    runtime.current?.update({ hour: props.hour, selectedId: props.selectedId, selectedFloor: props.selectedFloor, heatmap: props.heatmap, flow: props.flow, petGuide: props.petGuide });
+  }, [props.hour, props.selectedId, props.selectedFloor, props.heatmap, props.flow, props.petGuide, props.campus]);
 
   return <div className="scene-root" aria-label={`Interactive 3D map of ${props.campus.name}`}>
     <div className="scene-canvas" ref={container} />

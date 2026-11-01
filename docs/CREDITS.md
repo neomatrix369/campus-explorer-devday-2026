@@ -7,5 +7,6 @@ This focused CampusExplorer build and its schematic campus data were created dur
 - University names and campus context are checked against the official map pages linked in the [README](../README.md). Those maps are linked, not copied into the 3D geometry.
 - The app uses React, Three.js, Vite, Express, Lucide and Playwright under their respective open-source licences. Versions are recorded in `package-lock.json`.
 - The demo video was produced with the local `app-demo-video` skill template. Its bundled sound kit is CC0, and its bundled fonts are under SIL Open Font License 1.1. The reproducible narration and action sequence is in `demo-video/storyboard.json`.
+- The macOS desktop pet engine in `native-pet/` is adapted from [DesktopPetMac](https://github.com/iappyx/DesktopPetMac), MIT licensed, with its [LICENSE](../native-pet/LICENSE) included. That port builds on [desktopPet](https://github.com/Adrianotiger/desktopPet). Its sheep animation is downloaded at runtime from the upstream pet catalog and is not bundled here. The 3D sheep model and tour bridge were made for this build.
 
 No OpenAI, university, or FindUCL endorsement is implied.
