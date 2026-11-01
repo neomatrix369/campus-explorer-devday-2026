@@ -64,6 +64,7 @@ This build uses a local loopback bridge between the two apps. It does not claim 
 
 - [Combined AI Studio prompt](AI_STUDIO_PROMPT.md)
 - [Architecture and data limits](docs/ARCHITECTURE_AND_USER_GUIDE.md)
+- [Setup, operations and uninstall guide](docs/SETUP_OPERATIONS.md)
 - [Woolly code map](docs/WOOLLY_CODE_MAP.md)
 - [Asset and code credits](docs/CREDITS.md)
 - [Under-90-second demo storyboard](demo-video/storyboard.json)
