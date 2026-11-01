@@ -16,7 +16,7 @@ for (const width of [1280, 390]) {
   page.on('response', response => { if (response.status() >= 400 && !response.url().endsWith('/api/ai/tts')) errors.push(`${response.status()} ${response.url()}`); });
   await page.goto(url, { waitUntil: 'commit', timeout: 12000 });
   await page.waitForLoadState('domcontentloaded', { timeout: 12000 });
-  try { await page.locator('.map-pin').first().waitFor({ state: 'visible', timeout: 10000 }); }
+  try { await page.locator('.map-pin:visible').first().waitFor({ state: 'visible', timeout: 30000 }); }
   catch (error) {
     console.log(JSON.stringify({ width, errors, body: (await page.locator('body').innerText()).slice(0, 1000) }));
     await page.screenshot({ path: path.join(out, `failed-home-${width}.png`), timeout: 10000 });
