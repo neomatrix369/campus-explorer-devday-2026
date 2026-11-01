@@ -77,7 +77,7 @@ export function LondonOverview({ selectedCampus, onSelect }: { selectedCampus: s
     const woolly = woollyRef.current;
     if (!map || !woolly) return;
     if (flightFrame.current !== null) cancelAnimationFrame(flightFrame.current);
-    const route = [selectedCampus, ...TOUR_STOPS.map(stop => stop.campusId)];
+    const route = [selectedCampus, ...TOUR_STOPS.map(stop => stop.campusId)].filter((id, index, stops) => index === 0 || id !== stops[index - 1]);
     let leg = 0;
     let legStarted = 0;
     setFlying(true);
