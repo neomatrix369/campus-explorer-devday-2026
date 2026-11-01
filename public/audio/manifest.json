@@ -1,0 +1,65 @@
+{
+  "/audio/tour-1.mp3": {
+    "provider": "ElevenLabs",
+    "fingerprint": "abac976fef5ec5028ecc056291f98262a6ddf46d1031abd3b16db7576f52a381",
+    "model": "eleven_multilingual_v2",
+    "characters": 69,
+    "createdAt": "2026-11-01T16:03:07.994Z"
+  },
+  "/audio/tour-2.mp3": {
+    "provider": "ElevenLabs",
+    "fingerprint": "81a99f09d2aa9079717814c2c93d50088357d2f4f63ccad4835f13eead6683ea",
+    "model": "eleven_multilingual_v2",
+    "characters": 79,
+    "createdAt": "2026-11-01T16:03:08.902Z"
+  },
+  "/audio/tour-3.mp3": {
+    "provider": "ElevenLabs",
+    "fingerprint": "55b03473716bd6cd8b82691e79830ed675df4b360094cc927d11e8d01c36b935",
+    "model": "eleven_multilingual_v2",
+    "characters": 66,
+    "createdAt": "2026-11-01T16:03:09.704Z"
+  },
+  "/audio/tour-4.mp3": {
+    "provider": "ElevenLabs",
+    "fingerprint": "186fa08909ae76a5cca36137e45039acebd7a8783581a0579f63062500595da1",
+    "model": "eleven_multilingual_v2",
+    "characters": 67,
+    "createdAt": "2026-11-01T16:03:10.459Z"
+  },
+  "/audio/tour-5.mp3": {
+    "provider": "ElevenLabs",
+    "fingerprint": "f8b69b5ec990418f530c4dfbc4e48450978809ad9e7ab11e2469840faae5c0b5",
+    "model": "eleven_multilingual_v2",
+    "characters": 75,
+    "createdAt": "2026-11-01T16:03:11.211Z"
+  },
+  "/audio/tour-6.mp3": {
+    "provider": "ElevenLabs",
+    "fingerprint": "f41ce9e9018f457af5e24c39f168d70feed4327d398c92a8107974d0494d0227",
+    "model": "eleven_multilingual_v2",
+    "characters": 70,
+    "createdAt": "2026-11-01T16:03:12.329Z"
+  },
+  "/audio/rain.mp3": {
+    "provider": "ElevenLabs",
+    "fingerprint": "dc829f6e58a93a3c4b3e1d88ac03a5b912e13abc487f6e86266b023e3b041834",
+    "model": "eleven_text_to_sound_v2",
+    "characters": 132,
+    "createdAt": "2026-11-01T16:03:21.341Z"
+  },
+  "/audio/lofi.mp3": {
+    "provider": "ElevenLabs",
+    "fingerprint": "4db483f2d20d0a06b8da6639f9718904ed411a7cb907a85939ad350dae5fa1b0",
+    "model": "eleven_text_to_sound_v2",
+    "characters": 132,
+    "createdAt": "2026-11-01T16:03:25.446Z"
+  },
+  "/audio/cue.mp3": {
+    "provider": "ElevenLabs",
+    "fingerprint": "d646019c48caa88e67e34ae0e97f4341744a552cc37fa80ffc19b04abb722916",
+    "model": "eleven_text_to_sound_v2",
+    "characters": 6,
+    "createdAt": "2026-11-01T16:03:27.491Z"
+  }
+}

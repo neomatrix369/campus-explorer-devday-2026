@@ -1,3 +1,5 @@
+import { SOUNDS } from '../data/audio.ts';
+
 export type SoundMode = 'off' | 'lofi' | 'rain';
 
 export interface Soundscape {
@@ -11,8 +13,17 @@ export function createSoundscape(): Soundscape {
   let master: GainNode | null = null;
   let sources: AudioNode[] = [];
   let oscillators: AudioScheduledSourceNode[] = [];
+  let activeMode: SoundMode = 'off';
+  let generation = 0;
+  let ambient: HTMLAudioElement | null = null;
+  const cues = new Set<HTMLAudioElement>();
 
   const stop = () => {
+    ambient?.pause();
+    if (ambient) { ambient.onerror = null; ambient.src = ''; }
+    ambient = null;
+    cues.forEach(cue => { cue.pause(); cue.src = ''; });
+    cues.clear();
     oscillators.forEach(oscillator => { try { oscillator.stop(); } catch { /* already stopped */ } });
     sources.forEach(source => source.disconnect());
     sources = [];
@@ -28,9 +39,7 @@ export function createSoundscape(): Soundscape {
     return { context, master };
   };
 
-  const setMode = (mode: SoundMode) => {
-    stop();
-    if (mode === 'off') return;
+  const synthesize = (mode: Exclude<SoundMode, 'off'>) => {
     const audio = ensure();
     void audio.context.resume();
     const length = audio.context.sampleRate * 4;
@@ -64,8 +73,8 @@ export function createSoundscape(): Soundscape {
     });
   };
 
-  const cue = (frequency = 520) => {
-    if (!context || !master) return;
+  const synthesizeCue = (frequency: number) => {
+    if (activeMode === 'off' || !context || !master) return;
     const oscillator = context.createOscillator();
     const gain = context.createGain();
     oscillator.type = 'sine';
@@ -79,5 +88,27 @@ export function createSoundscape(): Soundscape {
     oscillator.stop(context.currentTime + .3);
   };
 
-  return { setMode, cue, dispose: () => { stop(); void context?.close(); context = master = null; } };
+  const setMode = (mode: SoundMode): void => {
+    generation++;
+    const request = generation;
+    activeMode = mode;
+    stop();
+    if (master) master.gain.value = mode === 'off' ? 0 : .32;
+    if (mode === 'off') return;
+    const fallback = (): void => { if (request === generation) { stop(); synthesize(mode); } };
+    ambient = new Audio(SOUNDS[mode].file);
+    ambient.loop = true;
+    ambient.volume = .18;
+    ambient.onerror = fallback;
+    void ambient.play().catch(fallback);
+  };
+  const cue = (frequency = 520): void => {
+    if (activeMode === 'off') return;
+    const effect = new Audio(SOUNDS.cue.file);
+    effect.volume = .18;
+    cues.add(effect);
+    effect.onended = () => { cues.delete(effect); };
+    void effect.play().catch(() => { cues.delete(effect); synthesizeCue(frequency); });
+  };
+  return { setMode, cue, dispose: () => { activeMode = 'off'; generation++; stop(); void context?.close(); context = master = null; } };
 }

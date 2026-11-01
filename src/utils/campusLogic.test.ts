@@ -112,3 +112,83 @@ test('blueprint parser creates a bounded schematic building', () => {
   assert.deepEqual([building.position[0], building.dimensions, building.floors.length, building.schematic], [70, [8, 45, 8], 1, true]);
   assert.deepEqual([described.name, described.floors.length, described.schematic], ['Garden study hub', 3, true]);
 });
+
+/** Scenario: Impossible requests stay impossible. Slice: trustworthy recommendations.
+ * Given a group larger than any available room, when asking for water and charging, then no unrelated floor is suggested. */
+test('recommendations never silently relax hard requirements', () => {
+  // -- Given --
+  const buildings = UNIVERSITIES[0].campuses[0].buildings;
+  // -- When --
+  const result = recommendStudySpot('group of 50 with charging and water', buildings, 16);
+  // -- Then --
+  assert.equal(result.match, null);
+});
+
+/** Scenario: Duration and group size are different needs. Slice: study planning.
+ * Given two hours of solo study at 2 AM, when parsed, then one seat, two hours and 02:00 are retained. */
+test('duration is not interpreted as a group size', () => {
+  // -- Given --
+  const query = 'quiet study for 2 hours at 2 AM';
+  // -- When --
+  const result = parseStudyQuery(query);
+  // -- Then --
+  assert.deepEqual([result.minSeats, result.durationHours, result.startHour], [1, 2, 2]);
+});
+
+/** Scenario: A student needs the whole study session. Slice: study planning.
+ * Given a building closing at 17:00, when requesting four hours at 16:30, then it is excluded. */
+test('recommendations require opening hours to cover the full duration', () => {
+  // -- Given --
+  const building = { ...ALL_BUILDINGS[0], hours: [8, 17] as [number, number] };
+  // -- When --
+  const result = recommendStudySpot('quiet for 4 hours', [building], 16.5);
+  // -- Then --
+  assert.equal(result.match, null);
+});
+
+/** Scenario: Quiet work can use silent areas. Slice: study finder.
+ * Given a silent study floor, when asking for quiet, then it remains eligible. */
+test('quiet requests include silent study floors', () => {
+  // -- Given --
+  const building = { ...ALL_BUILDINGS[0], floors: ALL_BUILDINGS[0].floors.filter(floor => floor.type === 'Silent') };
+  // -- When --
+  const result = rankStudySpaces([building], 16, { type: 'Quiet' });
+  // -- Then --
+  assert.ok(result.length > 0);
+});
+
+/** Scenario: Explicit time overrides the preview. Slice: study planning.
+ * Given a daytime-only building and a 16:00 preview, when asking for 02:00, then no daytime result is returned. */
+test('explicit requested time controls recommendations', () => {
+  // -- Given --
+  const building = { ...ALL_BUILDINGS[0], hours: [8, 17] as [number, number] };
+  // -- When --
+  const result = recommendStudySpot('quiet at 2 AM', [building], 16);
+  // -- Then --
+  assert.equal(result.match, null);
+});
+
+/** Scenario: Imported maps survive export. Slice: map portability.
+ * Given a polygon with a courtyard, height and floor count, when imported and exported, then its source geometry and properties are retained. */
+test('GeoJSON round trips geometry, holes and metadata', async () => {
+  // -- Given --
+  const { parseGeoJsonBuildings } = await import('./mapExports.ts');
+  const feature = { type: 'Feature', properties: { name: 'Courtyard', height: 30, 'building:levels': 6, source: 'user survey' }, geometry: { type: 'Polygon', coordinates: [[[-.134, 51.524], [-.133, 51.524], [-.133, 51.525], [-.134, 51.524]], [[-.1338, 51.5241], [-.1336, 51.5241], [-.1336, 51.5242], [-.1338, 51.5241]]] } };
+  // -- When --
+  const buildings = parseGeoJsonBuildings(JSON.stringify({ type: 'FeatureCollection', features: [feature] }), 0);
+  const exported = campusGeoJson({ ...UNIVERSITIES[0].campuses[0], buildings }) as { features: typeof feature[] };
+  // -- Then --
+  assert.deepEqual([exported.features[0].geometry, exported.features[0].properties, buildings[0].dimensions[1], buildings[0].floors.length], [feature.geometry, feature.properties, 30, 6]);
+});
+
+/** Scenario: A building footprint is not evidence of study access. Slice: truthful imports.
+ * Given geometry without verified study data, when ranking spaces, then it is excluded from study recommendations. */
+test('imported geometry does not invent available study seats', async () => {
+  // -- Given --
+  const { parseGeoJsonBuildings } = await import('./mapExports.ts');
+  const input = { type: 'FeatureCollection', features: [{ geometry: { type: 'Polygon', coordinates: [[[0, 0], [.001, 0], [.001, .001], [0, 0]]] } }] };
+  // -- When --
+  const buildings = parseGeoJsonBuildings(JSON.stringify(input), 0);
+  // -- Then --
+  assert.deepEqual(rankStudySpaces(buildings, 12), []);
+});

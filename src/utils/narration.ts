@@ -1,11 +1,18 @@
-export function startNarration(text: string, neuralAvailable: boolean, onEnd: () => void): () => void {
-  const controller = new AbortController();
-  let audio: HTMLAudioElement | null = null;
+export function startNarration(text: string, audioUrl: string, onEnd: () => void): () => void {
   let stopped = false;
-  let url: string | null = null;
-  const finish = () => { if (!stopped) onEnd(); };
-  const fallback = () => {
-    if (stopped || !('speechSynthesis' in window)) { finish(); return; }
+  let finished = false;
+  let fallbackStarted = false;
+  const audio = new Audio(audioUrl);
+  const finish = (): void => {
+    if (stopped || finished) return;
+    finished = true;
+    onEnd();
+  };
+  const fallback = (): void => {
+    if (stopped || fallbackStarted) return;
+    fallbackStarted = true;
+    audio.pause();
+    if (!('speechSynthesis' in window)) { finish(); return; }
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = 'en-GB';
     utterance.rate = .95;
@@ -14,22 +21,15 @@ export function startNarration(text: string, neuralAvailable: boolean, onEnd: ()
     window.speechSynthesis.cancel();
     window.speechSynthesis.speak(utterance);
   };
-  if (neuralAvailable) {
-    fetch('/api/ai/tts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }), signal: controller.signal })
-      .then(async response => {
-        if (!response.ok) { fallback(); return; }
-        url = URL.createObjectURL(await response.blob());
-        audio = new Audio(url);
-        audio.onended = finish;
-        audio.onerror = fallback;
-        void audio.play().catch(fallback);
-      }).catch(() => { if (!stopped) fallback(); });
-  } else fallback();
+  audio.onended = finish;
+  audio.onerror = fallback;
+  void audio.play().catch(fallback);
   return () => {
     stopped = true;
-    controller.abort();
-    audio?.pause();
-    if (url) URL.revokeObjectURL(url);
+    audio.onended = audio.onerror = null;
+    audio.pause();
+    audio.removeAttribute('src');
+    audio.load();
     window.speechSynthesis?.cancel();
   };
 }

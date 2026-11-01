@@ -2,9 +2,13 @@ import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import type { CampusBuilding, CampusProfile } from '../data/campusData.ts';
+import { createBox } from '../utils/sceneGeometry.ts';
 import { buildingOccupancy, occupancyBand, sunState } from '../utils/campusLogic.ts';
 
+export type CameraView = 'aerial' | 'focus' | 'street';
+
 export interface SceneHandle {
+  view: (view: CameraView) => void;
   focus: (buildingId: string) => void;
   reset: () => void;
   capture: () => string | null;
@@ -18,14 +22,17 @@ interface SceneProps {
   heatmap: boolean;
   flow: boolean;
   petGuide: boolean;
+  trees: boolean;
+  context: boolean;
   onSelect: (id: string) => void;
 }
 
 type SceneRuntime = {
+  view: (view: CameraView) => void;
   focus: (buildingId: string) => void;
   reset: () => void;
   capture: () => string | null;
-  update: (props: Pick<SceneProps, 'hour' | 'selectedId' | 'selectedFloor' | 'heatmap' | 'flow' | 'petGuide'>) => void;
+  update: (props: Pick<SceneProps, 'hour' | 'selectedId' | 'selectedFloor' | 'heatmap' | 'flow' | 'petGuide' | 'trees' | 'context'>) => void;
   dispose: () => void;
 };
 
@@ -34,11 +41,7 @@ function cssColor(name: string): string {
 }
 
 function box(w: number, h: number, d: number, color: THREE.ColorRepresentation, x: number, y: number, z: number): THREE.Mesh {
-  const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshStandardMaterial({ color, roughness: .83 }));
-  mesh.position.set(x, y, z);
-  mesh.castShadow = false;
-  mesh.receiveShadow = true;
-  return mesh;
+  return createBox([w, h, d], [x, y, z], color);
 }
 
 function sheepPart(parent: THREE.Group, color: string, position: [number, number, number], scale: [number, number, number]): THREE.Mesh {
@@ -105,6 +108,11 @@ function makeBuilding(building: CampusBuilding, textures: THREE.Texture[]): { gr
     const shape = new THREE.Shape();
     building.footprint.forEach(([x, z], index) => index ? shape.lineTo(x, -z) : shape.moveTo(x, -z));
     shape.closePath();
+    for (const ring of building.footprintHoles ?? []) {
+      const hole = new THREE.Path();
+      ring.forEach(([x, z], index) => index ? hole.lineTo(x, -z) : hole.moveTo(x, -z));
+      hole.closePath(); shape.holes.push(hole);
+    }
     geometry = new THREE.ExtrudeGeometry(shape, { depth: h, bevelEnabled: false });
     geometry.rotateX(-Math.PI / 2);
   }
@@ -187,7 +195,7 @@ function random(seed: number): number {
   return value - Math.floor(value);
 }
 
-function addCityContext(scene: THREE.Scene, campus: CampusProfile, textures: THREE.Texture[]): void {
+function addCityContext(scene: THREE.Group, campus: CampusProfile, textures: THREE.Texture[]): void {
   let n = 0;
   for (let x = -117; x <= 117; x += 15) {
     for (let z = -115; z <= 115; z += 15) {
@@ -210,7 +218,7 @@ function addCityContext(scene: THREE.Scene, campus: CampusProfile, textures: THR
   }
 }
 
-function addTrees(scene: THREE.Scene): void {
+function addTrees(scene: THREE.Group): void {
   for (let i = 0; i < 46; i++) {
     const angle = random(i + 911) * Math.PI * 2;
     const radius = 35 + random(i + 20) * 78;
@@ -254,8 +262,11 @@ function makeScene(container: HTMLDivElement, labels: HTMLDivElement, campus: Ca
   scene.add(sun);
   createGround(scene);
   const textures: THREE.Texture[] = [];
-  addCityContext(scene, campus, textures);
-  addTrees(scene);
+  const city = new THREE.Group();
+  const trees = new THREE.Group();
+  scene.add(city, trees);
+  addCityContext(city, campus, textures);
+  addTrees(trees);
 
   const buildings = new Map<string, ReturnType<typeof makeBuilding>>();
   const pins = new Map<string, HTMLButtonElement>();
@@ -292,7 +303,7 @@ function makeScene(container: HTMLDivElement, labels: HTMLDivElement, campus: Ca
   sheep.group.visible = false;
   scene.add(sheep.group);
 
-  let state: Pick<SceneProps, 'hour' | 'selectedId' | 'selectedFloor' | 'heatmap' | 'flow' | 'petGuide'> = { hour: 16, selectedId: null, selectedFloor: null, heatmap: false, flow: true, petGuide: false };
+  let state: Pick<SceneProps, 'hour' | 'selectedId' | 'selectedFloor' | 'heatmap' | 'flow' | 'petGuide' | 'trees' | 'context'> = { hour: 16, selectedId: null, selectedFloor: null, heatmap: false, flow: true, petGuide: false, trees: true, context: true };
   let desiredCamera: THREE.Vector3 | null = null;
   let desiredTarget: THREE.Vector3 | null = null;
   let frame = 0;
@@ -300,6 +311,7 @@ function makeScene(container: HTMLDivElement, labels: HTMLDivElement, campus: Ca
   let disposed = false;
   let lastRender = 0;
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  controls.enableDamping = !reducedMotion;
   const raycaster = new THREE.Raycaster();
   const pointer = new THREE.Vector2();
   let pointerStart: [number, number] | null = null;
@@ -331,6 +343,8 @@ function makeScene(container: HTMLDivElement, labels: HTMLDivElement, campus: Ca
   renderer.domElement.addEventListener('pointerup', pointerUp);
 
   const applyState = () => {
+    city.visible = state.context;
+    trees.visible = state.trees;
     const solar = sunState(state.hour);
     scene.background = new THREE.Color(solar.sky);
     scene.fog = new THREE.FogExp2(solar.sky, solar.phase === 'night' ? .0028 : .0016);
@@ -344,8 +358,10 @@ function makeScene(container: HTMLDivElement, labels: HTMLDivElement, campus: Ca
       const pin = pins.get(building.id)!;
       pin.dataset.band = band;
       pin.dataset.selected = String(building.id === state.selectedId);
-      pin.querySelector('.map-pin-value')!.textContent = `${occupancy}%`;
+      pin.querySelector('.map-pin-value')!.textContent = building.studyUseUnverified ? 'Unknown' : `${occupancy}%`;
       model.roof.color.set(state.heatmap ? band === 'quiet' ? '#92bd76' : band === 'moderate' ? '#dfae62' : '#d97954' : building.style === 'brick' ? '#c38964' : building.style === 'glass' ? '#8da7a7' : '#a6bd82');
+      model.body.emissive.set('#eebd75');
+      model.body.emissiveIntensity = solar.windowGlow * .22;
       model.body.transparent = building.id === state.selectedId && Boolean(state.selectedFloor);
       model.body.opacity = model.body.transparent ? .35 : 1;
       model.body.depthWrite = !model.body.transparent;
@@ -365,8 +381,8 @@ function makeScene(container: HTMLDivElement, labels: HTMLDivElement, campus: Ca
     lastRender = timestamp;
     frame++;
     if (desiredCamera && desiredTarget) {
-      camera.position.lerp(desiredCamera, .055);
-      controls.target.lerp(desiredTarget, .055);
+      camera.position.lerp(desiredCamera, reducedMotion ? 1 : .055);
+      controls.target.lerp(desiredTarget, reducedMotion ? 1 : .055);
       if (camera.position.distanceTo(desiredCamera) < .2) desiredCamera = desiredTarget = null;
     }
     controls.update();
@@ -375,12 +391,12 @@ function makeScene(container: HTMLDivElement, labels: HTMLDivElement, campus: Ca
     sheep.group.visible = Boolean(state.petGuide && selected);
     if (selected) {
       ring.position.set(selected.position[0], .5, selected.position[1]);
-      ring.scale.setScalar(1 + Math.sin(frame * .045) * .06);
+      ring.scale.setScalar(reducedMotion ? 1 : 1 + Math.sin(frame * .045) * .06);
       if (sheep.group.visible) {
         const standingY = selected.dimensions[1] + .5;
         const destination = new THREE.Vector3(selected.position[0] + selected.dimensions[0] * .2, standingY, selected.position[1] + selected.dimensions[2] * .2);
         if (sheep.group.position.lengthSq() === 0) sheep.group.position.copy(destination);
-        sheep.group.position.lerp(destination, .09);
+        sheep.group.position.lerp(destination, reducedMotion ? 1 : .09);
         sheep.group.position.y = standingY + (reducedMotion ? 0 : Math.abs(Math.sin(frame * .12)) * .18);
         sheep.feet.forEach((foot, index) => { foot.rotation.x = reducedMotion ? 0 : Math.sin(frame * .12 + index * Math.PI) * .35; });
       }
@@ -409,6 +425,13 @@ function makeScene(container: HTMLDivElement, labels: HTMLDivElement, campus: Ca
   animate(performance.now());
 
   return {
+    view: view => {
+      const building = campus.buildings.find(item => item.id === state.selectedId) ?? campus.buildings[0];
+      const [x, z] = building.position;
+      const height = building.dimensions[1];
+      desiredTarget = view === 'aerial' ? new THREE.Vector3(0, 0, 0) : new THREE.Vector3(x, height * .4, z);
+      desiredCamera = view === 'aerial' ? new THREE.Vector3(0, 210, 5) : view === 'street' ? new THREE.Vector3(x + 30, 8, z + 42) : new THREE.Vector3(x + 41, height + 45, z + 55);
+    },
     focus: buildingId => {
       const building = campus.buildings.find(item => item.id === buildingId);
       if (!building) return;
@@ -448,6 +471,7 @@ export const CampusScene3D = forwardRef<SceneHandle, SceneProps>(function Campus
   onSelect.current = props.onSelect;
 
   useImperativeHandle(ref, () => ({
+    view: view => runtime.current?.view(view),
     focus: id => runtime.current?.focus(id),
     reset: () => runtime.current?.reset(),
     capture: () => runtime.current?.capture() ?? null,
@@ -461,8 +485,8 @@ export const CampusScene3D = forwardRef<SceneHandle, SceneProps>(function Campus
   }, [props.campus]);
 
   useEffect(() => {
-    runtime.current?.update({ hour: props.hour, selectedId: props.selectedId, selectedFloor: props.selectedFloor, heatmap: props.heatmap, flow: props.flow, petGuide: props.petGuide });
-  }, [props.hour, props.selectedId, props.selectedFloor, props.heatmap, props.flow, props.petGuide, props.campus]);
+    runtime.current?.update({ hour: props.hour, selectedId: props.selectedId, selectedFloor: props.selectedFloor, heatmap: props.heatmap, flow: props.flow, petGuide: props.petGuide, trees: props.trees, context: props.context });
+  }, [props.hour, props.selectedId, props.selectedFloor, props.heatmap, props.flow, props.petGuide, props.trees, props.context, props.campus]);
 
   return <div className="scene-root" aria-label={`Interactive 3D map of ${props.campus.name}`}>
     <div className="scene-canvas" ref={container} />

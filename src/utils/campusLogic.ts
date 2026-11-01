@@ -8,6 +8,8 @@ export interface StudyPreference {
   water?: boolean;
   openNow?: boolean;
   search?: string;
+  durationHours?: number;
+  startHour?: number;
 }
 
 export interface RankedSpot {
@@ -43,6 +45,14 @@ export function isOpenAt(building: CampusBuilding, hour: number): boolean {
   return start <= end ? h >= start && h < end : h >= start || h < end;
 }
 
+export function isOpenFor(building: CampusBuilding, hour: number, duration = 0): boolean {
+  if (!isOpenAt(building, hour)) return false;
+  if (!building.hours) return true;
+  const end = building.hours[1];
+  const remaining = ((end - hour) % 24 + 24) % 24;
+  return duration <= remaining;
+}
+
 export function estimatedOccupancy(floor: FloorZone, hour: number): number {
   const h = (hour % 24 + 24) % 24;
   const midday = Math.exp(-Math.pow((h - 14) / 4.6, 2));
@@ -70,15 +80,16 @@ export function buildingOccupancy(building: CampusBuilding, hour: number): numbe
 }
 
 export function rankStudySpaces(buildings: CampusBuilding[], hour: number, preference: StudyPreference = {}): RankedSpot[] {
+  hour = preference.startHour ?? hour;
   const search = preference.search?.trim().toLowerCase() ?? '';
-  return buildings.flatMap(building => building.floors.flatMap(floor => {
-    const open = isOpenAt(building, hour);
+  return buildings.filter(building => !building.studyUseUnverified).flatMap(building => building.floors.flatMap(floor => {
+    const open = isOpenFor(building, hour, preference.durationHours);
     const occupancy = estimatedOccupancy(floor, hour);
     const seatsFree = Math.round(floor.seats * (1 - occupancy / 100));
     const noise = estimatedNoise(floor, occupancy);
     const haystack = `${building.name} ${building.shortCode} ${building.category} ${floor.name}`.toLowerCase();
     if (preference.openNow !== false && !open) return [];
-    if (preference.type && preference.type !== 'Any' && floor.type !== preference.type) return [];
+    if (preference.type && preference.type !== 'Any' && floor.type !== preference.type && !(preference.type === 'Quiet' && floor.type === 'Silent')) return [];
     if (preference.sockets && !floor.sockets) return [];
     if (preference.water && !floor.water) return [];
     if (preference.maxNoise && noise > preference.maxNoise) return [];
@@ -91,12 +102,20 @@ export function rankStudySpaces(buildings: CampusBuilding[], hour: number, prefe
 
 export function parseStudyQuery(query: string): StudyPreference {
   const lower = query.toLowerCase();
-  const groupSize = lower.match(/(?:group of|for)\s+(\d+)/);
+  const groupSize = lower.match(/(?:group of\s+|for\s+)(\d+)\s*(?:people|friends|students|seats|of us)\b|group of\s+(\d+)\b/);
+  const duration = lower.match(/(?:for\s+)?(\d+(?:\.\d+)?)\s*(hours?|hrs?|h|minutes?|mins?)\b/);
+  const time = lower.match(/\bat\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b/);
+  const rawHour = time ? Number(time[1]) : NaN;
+  const minutes = Number(time?.[2] ?? 0);
+  const validTime = time && minutes < 60 && (time[3] ? rawHour >= 1 && rawHour <= 12 : rawHour < 24);
+  const startHour = validTime ? (time[3] ? rawHour % 12 + (time[3] === 'pm' ? 12 : 0) : rawHour) + minutes / 60 : undefined;
   const silent = /silent|no talking|deep focus/.test(lower);
   const group = /group|chat|talk|collaborat/.test(lower);
   return {
     type: silent ? 'Silent' : group ? 'Group' : /quiet|calm|focus/.test(lower) ? 'Quiet' : 'Any',
-    minSeats: groupSize ? Number(groupSize[1]) : 1,
+    minSeats: groupSize ? Number(groupSize[1] ?? groupSize[2]) : 1,
+    durationHours: duration ? Number(duration[1]) / (/^min/.test(duration[2]) ? 60 : 1) : undefined,
+    startHour,
     sockets: /socket|outlet|charging|power|plug/.test(lower),
     water: /water|refill/.test(lower),
     openNow: true,
@@ -116,12 +135,12 @@ export function explainStudySpot(spot: RankedSpot, hour: number): string {
 
 export function recommendStudySpot(query: string, buildings: CampusBuilding[], hour: number): Recommendation {
   const preference = parseStudyQuery(query);
+  hour = preference.startHour ?? hour;
   const matches = rankStudySpaces(buildings, hour, preference);
-  const fallback = matches.length ? matches : rankStudySpaces(buildings, hour);
-  const match = fallback[0] ?? null;
-  if (!match) return { headline: 'No study spaces found', explanation: 'Try another campus or time.', match: null, criteria: [] };
+  const match = matches[0] ?? null;
+  if (!match) return { headline: 'No exact match found', explanation: `No floor matches all your requirements at ${formatHour(hour)}${preference.durationHours ? ` for ${preference.durationHours} hours` : ''}. Try another campus, time or fewer requirements.`, match: null, criteria: [] };
   const criteria = spotCriteria(match);
-  const explanation = explainStudySpot(match, hour);
+  const explanation = explainStudySpot(match, hour) + (preference.durationHours ? ` Assumed opening hours cover your ${preference.durationHours}-hour session; seats cannot be guaranteed.` : '');
   return { headline: `${match.building.name} · ${match.floor.level}`, explanation, match, criteria };
 }
 

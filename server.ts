@@ -3,8 +3,11 @@ import { config } from 'dotenv';
 import { createServer as createViteServer } from 'vite';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { existsSync } from 'node:fs';
+import { TOUR_STOPS } from './src/data/tour.ts';
+import { TOUR_AUDIO } from './src/data/audio.ts';
 import { ALL_BUILDINGS, UNIVERSITIES } from './src/data/campusData.ts';
-import { explainStudySpot, rankStudySpaces, recommendStudySpot, spotCriteria } from './src/utils/campusLogic.ts';
+import { explainStudySpot, parseStudyQuery, rankStudySpaces, recommendStudySpot, spotCriteria } from './src/utils/campusLogic.ts';
 
 config();
 
@@ -26,7 +29,7 @@ function estimatedModelCost(usage: unknown): number | null {
 app.use(express.json({ limit: '1mb' }));
 
 app.get('/api/health', (_request, response) => {
-  response.json({ ok: true, mode: apiKey ? 'model-enabled' : 'local' });
+  response.json({ ok: true, mode: apiKey ? 'model-enabled' : 'local', speech: existsSync(path.join(root, 'public/audio/tour-1.mp3')) ? 'elevenlabs-bundled' : 'browser' });
 });
 
 let petMode: 'desktop' | 'tour' = 'desktop';
@@ -48,7 +51,8 @@ app.post('/api/pet/mode', (request, response) => {
 app.post('/api/ai/concierge', async (request, response) => {
   const query = typeof request.body?.query === 'string' ? request.body.query.trim().slice(0, 240) : '';
   const campusId = typeof request.body?.campusId === 'string' ? request.body.campusId : '';
-  const hour = Number.isFinite(request.body?.hour) ? Number(request.body.hour) : 16;
+  const preference = parseStudyQuery(query);
+  const hour = preference.startHour ?? (Number.isFinite(request.body?.hour) ? Number(request.body.hour) : 16);
   if (!query) return response.status(400).json({ error: 'Enter a study preference or question.' });
 
   const campus = UNIVERSITIES.flatMap(university => university.campuses).find(item => item.id === campusId);
@@ -57,7 +61,7 @@ app.post('/api/ai/concierge', async (request, response) => {
   if (!apiKey || !local.match) return response.json({ ...local, source: 'local', usage: null, costUsd: 0 });
 
   try {
-    const candidates = rankStudySpaces(buildings, hour).slice(0, 18).map(spot => ({
+    const candidates = rankStudySpaces(buildings, hour, preference).slice(0, 18).map(spot => ({
       buildingId: spot.building.id, floorLevel: spot.floor.level, name: spot.building.name,
       floorName: spot.floor.name, type: spot.floor.type, seatsFreeEstimate: spot.seatsFree,
       noiseEstimate: spot.noise, sockets: spot.floor.sockets, water: spot.floor.water,
@@ -85,7 +89,7 @@ app.post('/api/ai/concierge', async (request, response) => {
     const parsed = JSON.parse(content) as { buildingId: string; floorLevel: string; explanation: string };
     const selected = candidates.find(item => item.buildingId === parsed.buildingId && item.floorLevel === parsed.floorLevel);
     if (!selected) throw new Error('Model selected an unavailable floor');
-    const match = rankStudySpaces(buildings, hour).find(item => item.building.id === parsed.buildingId && item.floor.level === parsed.floorLevel);
+    const match = rankStudySpaces(buildings, hour, preference).find(item => item.building.id === parsed.buildingId && item.floor.level === parsed.floorLevel);
     if (!match) throw new Error('Selected floor is closed');
     const modelExplanation = parsed.explanation.slice(0, 180);
     const explanation = /\b(live|real.time|verified|guaranteed|reserved|booked|confirmed)\b/i.test(modelExplanation)
@@ -98,23 +102,13 @@ app.post('/api/ai/concierge', async (request, response) => {
   }
 });
 
-app.post('/api/ai/tts', async (request, response) => {
-  const text = typeof request.body?.text === 'string' ? request.body.text.trim().slice(0, 1200) : '';
-  if (!text) return response.status(400).json({ error: 'Text is required.' });
-  if (!apiKey) return response.status(503).json({ error: 'Neural speech is not configured.', fallback: true });
-  try {
-    const speech = await fetch('https://api.openai.com/v1/audio/speech', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-      signal: AbortSignal.timeout(15000),
-      body: JSON.stringify({ model: 'gpt-4o-mini-tts', voice: 'coral', input: text, response_format: 'mp3' }),
-    });
-    if (!speech.ok) throw new Error(`Speech returned ${speech.status}`);
-    response.set('Content-Type', 'audio/mpeg');
-    return response.send(Buffer.from(await speech.arrayBuffer()));
-  } catch {
-    return response.status(503).json({ error: 'Neural speech is unavailable.', fallback: true });
-  }
+// Only serve the pre-generated tour. Public visitors cannot trigger paid generation.
+app.post('/api/ai/tts', (request, response) => {
+  const index = TOUR_STOPS.findIndex(stop => stop.narration === request.body?.text);
+  if (index < 0) return response.status(400).json({ error: 'Choose a supported tour stop.' });
+  const file = path.join(root, 'public', TOUR_AUDIO(index));
+  if (!existsSync(file)) return response.status(503).json({ error: 'Tour audio unavailable.', fallback: true });
+  return response.type('audio/mpeg').sendFile(file);
 });
 
 async function start(): Promise<void> {

@@ -1,15 +1,11 @@
+import { CAMPUS_CENTERS } from '../data/campusData.ts';
 import type { CampusBuilding, CampusProfile, FloorZone, UniversityProfile } from '../data/campusData.ts';
 import { buildingOccupancy } from './campusLogic.ts';
 
-const campusCenters: Record<string, [number, number]> = {
-  'ucl-bloomsbury': [-.1340, 51.5246], 'ucl-east': [-.0087, 51.5381],
-  'kcl-strand': [-.1163, 51.5115], 'kcl-waterloo-guys': [-.1122, 51.5040],
-  'imperial-south-ken': [-.1749, 51.4988], 'imperial-white-city': [-.2363, 51.5162],
-  'lse-aldwych': [-.1160, 51.5144],
-};
+
 
 export function campusGeoJson(campus: CampusProfile): object {
-  const [centerLng, centerLat] = campusCenters[campus.id] ?? [-.13, 51.52];
+  const [centerLng, centerLat] = CAMPUS_CENTERS[campus.id] ?? [-.13, 51.52];
   const coordinates = (x: number, z: number): [number, number] => [
     Number((centerLng + x / 69000).toFixed(7)), Number((centerLat - z / 111000).toFixed(7)),
   ];
@@ -17,9 +13,10 @@ export function campusGeoJson(campus: CampusProfile): object {
     type: 'FeatureCollection',
     metadata: { name: campus.name, source: campus.sourceUrl, geometry: 'schematic, not a survey' },
     features: campus.buildings.map(building => {
+      if (building.sourceGeometry) return { type: 'Feature', properties: building.sourceProperties ?? {}, geometry: building.sourceGeometry };
       const [x, z] = building.position;
       const [w, , d] = building.dimensions;
-      const ring = [coordinates(x - w / 2, z - d / 2), coordinates(x + w / 2, z - d / 2), coordinates(x + w / 2, z + d / 2), coordinates(x - w / 2, z + d / 2)];
+      const ring = building.footprint ? building.footprint.map(([px, pz]) => coordinates(x + px, z + pz)) : [coordinates(x - w / 2, z - d / 2), coordinates(x + w / 2, z - d / 2), coordinates(x + w / 2, z + d / 2), coordinates(x - w / 2, z + d / 2)];
       return { type: 'Feature', properties: { name: building.name, code: building.shortCode, height_estimate_m: building.dimensions[1], schematic: true }, geometry: { type: 'Polygon', coordinates: [[...ring, ring[0]]] } };
     }),
   };
@@ -132,9 +129,17 @@ export function parseGeoJsonBuildings(raw: string, startIndex: number): CampusBu
     if (!feature || typeof feature !== 'object') return [];
     const coordinates = feature.geometry?.coordinates;
     if (feature.geometry?.type !== 'Polygon' || !Array.isArray(coordinates) || !Array.isArray(coordinates[0])) return [];
-    const ring = (coordinates[0] as unknown[]).filter(point => Array.isArray(point) && point.length >= 2 && Number.isFinite(Number(point[0])) && Number.isFinite(Number(point[1]))).map(point => [Number((point as number[])[0]), Number((point as number[])[1])] as [number, number]);
-    if (ring.length < 3) return [];
-    return [{ ring, name: typeof feature.properties?.name === 'string' ? feature.properties.name : `Imported building ${startIndex + 1}` }];
+    const rings = coordinates.map((value: unknown) => {
+      if (!Array.isArray(value) || value.length < 4 || value.length > 10000) throw new Error('Polygon rings need 4–10,000 coordinate pairs.');
+      const ring = value.map((point: unknown) => {
+        if (!Array.isArray(point) || typeof point[0] !== 'number' || typeof point[1] !== 'number' || !Number.isFinite(point[0]) || !Number.isFinite(point[1]) || Math.abs(point[0]) > 180 || Math.abs(point[1]) > 90) throw new Error('GeoJSON coordinates must be finite longitude and latitude values.');
+        return [point[0], point[1]] as [number, number];
+      });
+      if (ring[0][0] !== ring.at(-1)![0] || ring[0][1] !== ring.at(-1)![1]) throw new Error('Close each Polygon ring by repeating its first coordinate.');
+      return ring;
+    });
+    const properties = feature.properties && typeof feature.properties === 'object' && !Array.isArray(feature.properties) ? feature.properties : {};
+    return [{ ring: rings[0], rings, properties, name: typeof properties.name === 'string' ? properties.name : `Imported building ${startIndex + 1}` }];
   }).slice(0, 40);
   if (!polygons.length) throw new Error('No Polygon building footprints were found in this GeoJSON.');
   const all = polygons.flatMap(item => item.ring);
@@ -151,13 +156,20 @@ export function parseGeoJsonBuildings(raw: string, startIndex: number): CampusBu
     const footprint = ring.map(point => [point[0] - x, point[1] - z] as [number, number]);
     const width = Math.max(...footprint.map(point => point[0])) - Math.min(...footprint.map(point => point[0]));
     const depth = Math.max(...footprint.map(point => point[1])) - Math.min(...footprint.map(point => point[1]));
+    const rawHeight = Number(item.properties.height ?? item.properties.height_estimate_m);
+    const height = Number.isFinite(rawHeight) && rawHeight > 0 ? Math.min(200, rawHeight) : 16;
+    const rawLevels = Number(item.properties['building:levels'] ?? item.properties.levels);
+    const levels = Number.isFinite(rawLevels) && rawLevels > 0 ? Math.min(10, Math.floor(rawLevels)) : 1;
     const name = item.name.trim().slice(0, 60) || `Imported building ${startIndex + index + 1}`;
     return {
       id: `geo-${startIndex + index}-${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
       name, shortCode: name.split(/\s+/).map(word => word[0]).join('').slice(0, 4).toUpperCase(), category: 'Imported footprint',
-      position: [x, z] as [number, number], dimensions: [Math.max(6, width), 16, Math.max(6, depth)] as [number, number, number],
+      position: [x, z] as [number, number], dimensions: [Math.max(6, width), height, Math.max(6, depth)] as [number, number, number],
       style: 'modern' as const, color: '#b7c4b1', hours: [8, 22] as [number, number], hoursLabel: 'Hours unknown (verify)', schematic: true,
-      footprint, floors: [{ level: '1', name: 'Imported footprint, study use unverified', type: 'Quiet' as const, seats: 40, baseOccupancy: .45, noiseDba: 40, sockets: false, water: false, bookable: false }],
+      footprint,
+      footprintHoles: item.rings.slice(1).map(ring => ring.map(point => { const [px, pz] = project(point); return [px * scale - x, pz * scale - z] as [number, number]; })),
+      sourceGeometry: { type: 'Polygon' as const, coordinates: item.rings }, sourceProperties: item.properties, studyUseUnverified: true,
+      floors: Array.from({ length: levels }, (_, index) => ({ level: String(index + 1), name: 'Imported geometry · study use unknown', type: 'Quiet' as const, seats: 0, baseOccupancy: 0, noiseDba: 0, sockets: false, water: false, bookable: false })),
     };
   });
 }

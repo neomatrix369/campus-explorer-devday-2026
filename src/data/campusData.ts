@@ -27,6 +27,10 @@ export interface CampusBuilding {
   floors: FloorZone[];
   schematic?: boolean;
   footprint?: [number, number][];
+  footprintHoles?: [number, number][][];
+  sourceGeometry?: { type: 'Polygon'; coordinates: [number, number][][] };
+  sourceProperties?: Record<string, unknown>;
+  studyUseUnverified?: boolean;
 }
 
 export interface CampusProfile {
@@ -161,3 +165,10 @@ export function findBuildingLocation(id: string): { university: UniversityProfil
   }
   return null;
 }
+
+export const CAMPUS_CENTERS: Record<string, [number, number]> = {
+  'ucl-bloomsbury': [-.1340, 51.5246], 'ucl-east': [-.0087, 51.5381],
+  'kcl-strand': [-.1163, 51.5115], 'kcl-waterloo-guys': [-.1122, 51.5040],
+  'imperial-south-ken': [-.1749, 51.4988], 'imperial-white-city': [-.2363, 51.5162],
+  'lse-aldwych': [-.1160, 51.5144],
+};

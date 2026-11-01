@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { ArrowUpRight, BatteryCharging, BookOpen, Droplets, MapPin, Search, Sparkles, X } from 'lucide-react';
 import type { CampusBuilding, CampusProfile, FloorZone } from '../data/campusData.ts';
-import { buildingOccupancy, estimatedNoise, estimatedOccupancy, occupancyBand, rankStudySpaces, type Recommendation } from '../utils/campusLogic.ts';
+import { formatHour, buildingOccupancy, estimatedNoise, estimatedOccupancy, occupancyBand, rankStudySpaces, type Recommendation } from '../utils/campusLogic.ts';
 import { FloorStackSvg } from './FloorExplorer.tsx';
 
 interface LeftProps {
@@ -48,7 +48,7 @@ export function LeftRail({ campus, hour, recommendation, usageText, loading, onA
       </form>
       <div className="example-chips">{examples.map(example => <button key={example} onClick={() => ask(example)}>{example}</button>)}</div>
       {recommendation && <div className="answer-card" role="status">
-        <span className="eyebrow">Suggested floor · estimated</span>
+        <span className="eyebrow">{recommendation.match ? 'Suggested floor · estimated' : 'Your requirements kept'}</span>
         <strong>{recommendation.headline}</strong>
         <p>{recommendation.explanation}</p>
         {usageText && <small className="usage-line">AI usage: {usageText}</small>}
@@ -68,7 +68,7 @@ export function LeftRail({ campus, hour, recommendation, usageText, loading, onA
     </section>
 
     <section className="panel quiet-list">
-      <div className="panel-title"><span className="quiet-mark" /><h2>Quietest spots at {Math.floor(hour).toString().padStart(2, '0')}:00</h2></div>
+      <div className="panel-title"><span className="quiet-mark" /><h2>Quietest spots at {formatHour(hour)}</h2></div>
       {top.length ? top.map(spot => <button className="spot-row" key={`${spot.building.id}-${spot.floor.level}`} onClick={() => onSelect(spot.building.id, spot.floor.level)}>
         <span className={`spot-accent ${occupancyBand(spot.occupancy)}`} />
         <span className="spot-copy"><strong>{spot.building.name}</strong><small>Floor {spot.floor.level} · {spot.floor.type} · ~{spot.seatsFree} seats free</small></span>
@@ -93,6 +93,7 @@ export function BuildingInspector({ campus, building, hour, selectedFloor, onFlo
   const selected = building.floors.find(floor => floor.level === selectedFloor) ?? building.floors[0];
   return <aside className="inspector panel" aria-label={`Details for ${building.name}`}>
     <div className="inspector-heading"><div><span className="eyebrow">{building.category}</span><h2>{building.name}</h2></div><button className="icon-button" onClick={onClose} aria-label="Close building details"><X size={19} /></button></div>
+    {building.studyUseUnverified && <p className="inspector-note">Imported geometry only. Study access, seating, amenities and noise are unknown; this building is excluded from recommendations.</p>}
     <div className="status-line"><span className={`status-pill ${occupancyBand(occupancy)}`}>{occupancyBand(occupancy)} · {occupancy}% occupied</span><span className="status-pill neutral">Simulated estimate</span></div>
     <p className="inspector-note">Choose a floor to see its estimated seats, noise and amenities.</p>
     <div className="stack-preview"><FloorStackSvg building={building} selectedFloor={selected.level} hour={hour} onSelect={onFloor} /></div>
