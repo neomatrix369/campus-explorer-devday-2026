@@ -9,3 +9,5 @@ This focused CampusExplorer build and its schematic campus data were created dur
 - The demo video was produced with the local `app-demo-video` skill template. Its bundled sound kit is CC0, and its bundled fonts are under SIL Open Font License 1.1. The reproducible narration and action sequence is in `demo-video/storyboard.json`.
 
 No OpenAI, university, or FindUCL endorsement is implied.
+
+The macOS desktop pet engine in `native-pet/` is adapted from [DesktopPetMac](https://github.com/iappyx/DesktopPetMac), MIT licensed, with its [LICENSE](../native-pet/LICENSE) included. That port builds on [desktopPet](https://github.com/Adrianotiger/desktopPet). Its sheep animation is downloaded at runtime from the upstream pet catalog and is not bundled here. The 3D sheep model and tour bridge were made for this build.

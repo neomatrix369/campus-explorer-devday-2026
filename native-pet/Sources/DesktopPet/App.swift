@@ -1,0 +1,618 @@
+import AppKit
+import UniformTypeIdentifiers
+
+/// Owns the loaded pet definition and every live pet window; drives the menu-bar item.
+final class PetManager: NSObject {
+    private(set) var definition: PetDefinition?
+    private(set) var sheet: SpriteSheet?
+    private(set) var pets: [PetWindow] = []
+    private var statusItem: NSStatusItem?
+    private let defaults = UserDefaults.standard
+    private var tourMode = false
+    private let campusURL = URL(string: ProcessInfo.processInfo.environment["CAMPUS_URL"] ?? "http://127.0.0.1:3000")!
+
+    var scale: Int {
+        get { let v = defaults.integer(forKey: "scale"); return v == 0 ? 1 : max(1, min(4, v)) }
+        set { defaults.set(newValue, forKey: "scale"); pets.forEach { $0.setScale(newValue) } }
+    }
+    var multiscreen: Bool {
+        get { defaults.bool(forKey: "multiscreen") }
+        set { defaults.set(newValue, forKey: "multiscreen") }
+    }
+    var soundEnabled: Bool {
+        get { defaults.object(forKey: "sound") as? Bool ?? true }
+        set { defaults.set(newValue, forKey: "sound"); SoundPlayer.shared.enabled = newValue }
+    }
+    var currentPetFolder: String {
+        get { defaults.string(forKey: "petFolder") ?? "esheep64" }
+        set { defaults.set(newValue, forKey: "petFolder") }
+    }
+
+    // MARK: - Pet catalog (downloaded from the upstream repository)
+
+    let catalog = PetCatalog()
+    /// Shown as the menu header while something is downloading.
+    private var status: String?
+    private var indexFailed = false
+
+    func refreshCatalog(completion: (() -> Void)? = nil) {
+        status = "Updating pet list…"
+        rebuildMenu()
+        catalog.refreshIndex { [weak self] result in
+            guard let self = self else { return }
+            self.status = nil
+            if case .failure(let error) = result {
+                NSLog("DesktopPet: cannot refresh pet list: \(error)")
+                self.indexFailed = true
+            } else {
+                self.indexFailed = false
+                self.catalog.fetchMissingTitles { [weak self] in self?.rebuildMenu() }
+                self.catalog.fetchMissingIcons { [weak self] in self?.rebuildMenu() }
+                self.catalog.fetchMissingReadmes { [weak self] in self?.rebuildMenu() }
+            }
+            self.rebuildMenu()
+            completion?()
+        }
+    }
+
+    /// Loads a pet from the catalog (downloading it if needed) and adds one instance of it.
+    func selectPet(_ folder: String, onFailure: ((Error) -> Void)? = nil) {
+        status = "Downloading \(catalog.displayName(folder))…"
+        rebuildMenu()
+        catalog.fetchPet(folder) { [weak self] result in
+            guard let self = self else { return }
+            self.status = nil
+            do {
+                try self.loadPet(at: result.get())
+                self.currentPetFolder = folder
+                self.addPet()
+            } catch {
+                self.rebuildMenu()
+                if let onFailure = onFailure { onFailure(error) } else { self.presentError(error) }
+            }
+        }
+    }
+
+    // MARK: - Loading
+
+    func loadPet(at url: URL) throws {
+        let data = try Data(contentsOf: url)
+        let def = try PetXML.load(data: data)
+        let sh = try SpriteSheet(pet: def)
+        removeAllPets()
+        definition = def
+        sheet = sh
+        rebuildMenu()
+    }
+
+    func presentError(_ error: Error) {
+        let alert = NSAlert()
+        alert.messageText = "Could not load pet"
+        alert.informativeText = error.localizedDescription
+        alert.runModal()
+    }
+
+    // MARK: - Pets
+
+    @discardableResult
+    func addPet() -> PetWindow? {
+        guard let def = definition, let sh = sheet else { return nil }
+        let w = PetWindow(pet: def, sprites: sh, scale: scale, manager: self)
+        pets.append(w)
+        w.play()
+        if tourMode { w.orderOut(nil) }
+        return w
+    }
+
+    func startTourBridge() {
+        Timer.scheduledTimer(withTimeInterval: 0.8, repeats: true) { [weak self] _ in self?.pollTourMode() }
+        pollTourMode()
+    }
+
+    private func pollTourMode() {
+        let url = campusURL.appendingPathComponent("api/pet/mode")
+        URLSession.shared.dataTask(with: url) { [weak self] data, _, _ in
+            guard let data = data,
+                  let value = try? JSONSerialization.jsonObject(with: data) as? [String: String],
+                  let mode = value["mode"] else { return }
+            DispatchQueue.main.async { self?.setTourMode(mode == "tour") }
+        }.resume()
+    }
+
+    private func setTourMode(_ active: Bool) {
+        guard tourMode != active else { return }
+        tourMode = active
+        if active { pets.forEach { $0.orderOut(nil) } }
+        else { pets.forEach { $0.orderFrontRegardless() } }
+        rebuildMenu()
+    }
+
+    private func postTourMode(_ mode: String, completion: @escaping (Bool) -> Void) {
+        var request = URLRequest(url: campusURL.appendingPathComponent("api/pet/mode"))
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: ["mode": mode])
+        URLSession.shared.dataTask(with: request) { _, response, _ in
+            let ok = (response as? HTTPURLResponse)?.statusCode == 200
+            DispatchQueue.main.async { completion(ok) }
+        }.resume()
+    }
+
+    func launchCampusTour() {
+        postTourMode("tour") { [weak self] ok in
+            guard let self = self else { return }
+            guard ok else {
+                let alert = NSAlert()
+                alert.messageText = "Start CampusExplorer first"
+                alert.informativeText = "Run npm run dev in the project folder, then try again."
+                alert.runModal()
+                return
+            }
+            self.setTourMode(true)
+            var tourURL = URLComponents(url: self.campusURL, resolvingAgainstBaseURL: false)!
+            tourURL.queryItems = [URLQueryItem(name: "sheepTour", value: "1")]
+            NSWorkspace.shared.open(tourURL.url!)
+        }
+    }
+
+    func removeAllPets() {
+        let list = pets
+        pets.removeAll()
+        list.forEach { $0.closePet() }
+    }
+
+    func killAllPets() {
+        pets.forEach { $0.kill() }
+    }
+
+    func syncAllPets() {
+        pets.forEach { $0.sync() }
+    }
+
+    func petClosed(_ w: PetWindow) {
+        pets.removeAll { $0 === w }
+    }
+
+    // MARK: - Menu bar
+
+    func installStatusItem() {
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        statusItem = item
+        rebuildMenu()
+        NotificationCenter.default.addObserver(self, selector: #selector(screensChanged),
+                                               name: NSApplication.didChangeScreenParametersNotification, object: nil)
+    }
+
+    /// A display was added, removed or rearranged: keep every pet (children too) on a screen that exists.
+    @objc private func screensChanged() {
+        func recover(_ w: PetWindow) {
+            w.recoverDisplayLayout()
+            w.childPets.forEach(recover)
+        }
+        pets.forEach(recover)
+    }
+
+    private func rebuildMenu() {
+        guard let item = statusItem else { return }
+        if let icon = sheet?.icon {
+            icon.size = NSSize(width: 18, height: 18)
+            item.button?.image = icon
+            item.button?.image?.isTemplate = false
+        } else if let img = NSImage(systemSymbolName: "pawprint.fill", accessibilityDescription: "Desktop Pet") {
+            item.button?.image = img
+        } else {
+            item.button?.title = "🐑"
+        }
+
+        let menu = NSMenu()
+        let name = status ?? definition?.petName ?? "Desktop Pet"
+        let header = NSMenuItem(title: name, action: nil, keyEquivalent: "")
+        header.isEnabled = false
+        menu.addItem(header)
+        menu.addItem(.separator())
+
+        menu.addItem(withTitle: "Add pet", action: #selector(menuAddPet), keyEquivalent: "n").target = self
+        menu.addItem(withTitle: "Sync pets", action: #selector(menuSync), keyEquivalent: "").target = self
+        menu.addItem(withTitle: "Remove all pets", action: #selector(menuRemoveAll), keyEquivalent: "").target = self
+        menu.addItem(.separator())
+        menu.addItem(withTitle: "Lead CampusExplorer tour", action: #selector(menuLeadTour), keyEquivalent: "t").target = self
+        if tourMode { menu.addItem(withTitle: "Return to desktop", action: #selector(menuReturnToDesktop), keyEquivalent: "r").target = self }
+        menu.addItem(.separator())
+
+        let petsMenu = NSMenu()
+        if catalog.entries.isEmpty {
+            let title = indexFailed ? "Pet list unavailable (offline?)" : "Loading pet list…"
+            let mi = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+            mi.isEnabled = false
+            petsMenu.addItem(mi)
+        }
+        let sorted = catalog.entries.sorted {
+            catalog.displayName($0.folder).localizedCaseInsensitiveCompare(catalog.displayName($1.folder)) == .orderedAscending
+        }
+        for e in sorted {
+            let mi = NSMenuItem(title: catalog.displayName(e.folder), action: #selector(menuSelectPet(_:)), keyEquivalent: "")
+            mi.target = self
+            mi.representedObject = e.folder
+            if let icon = catalog.icon(e.folder) { mi.image = Self.menuIcon(icon) }
+            mi.state = (e.folder == currentPetFolder) ? .on : .off
+            mi.toolTip = (catalog.shortDescription(e.folder).map { $0 + "\n" } ?? "")
+                + "by \(e.author), updated \(e.lastupdate)"
+                + (catalog.cachedXML(for: e.folder) == nil ? " (will be downloaded)" : "")
+            petsMenu.addItem(mi)
+        }
+        petsMenu.addItem(.separator())
+        petsMenu.addItem(withTitle: "Refresh pet list", action: #selector(menuRefresh), keyEquivalent: "").target = self
+        petsMenu.addItem(withTitle: "Open animations.xml…", action: #selector(menuOpenXML), keyEquivalent: "o").target = self
+        let petsEntry = NSMenuItem(title: "Pet", action: nil, keyEquivalent: "")
+        petsEntry.submenu = petsMenu
+        menu.addItem(petsEntry)
+
+        let scaleMenu = NSMenu()
+        for s in 1...4 {
+            let mi = NSMenuItem(title: "\(s)×", action: #selector(menuScale(_:)), keyEquivalent: "")
+            mi.target = self
+            mi.tag = s
+            mi.state = (s == scale) ? .on : .off
+            scaleMenu.addItem(mi)
+        }
+        let scaleEntry = NSMenuItem(title: "Size", action: nil, keyEquivalent: "")
+        scaleEntry.submenu = scaleMenu
+        menu.addItem(scaleEntry)
+
+        let sound = NSMenuItem(title: "Sounds", action: #selector(menuToggleSound), keyEquivalent: "")
+        sound.target = self
+        sound.state = soundEnabled ? .on : .off
+        menu.addItem(sound)
+
+        let multi = NSMenuItem(title: "Use all displays", action: #selector(menuToggleMultiscreen), keyEquivalent: "")
+        multi.target = self
+        multi.state = multiscreen ? .on : .off
+        menu.addItem(multi)
+
+        menu.addItem(.separator())
+        if let d = definition {
+            let about = NSMenuItem(title: "About \(d.petName)…", action: #selector(menuAbout), keyEquivalent: "")
+            about.target = self
+            menu.addItem(about)
+        }
+        menu.addItem(withTitle: "Quit", action: #selector(menuQuit), keyEquivalent: "q").target = self
+        item.menu = menu
+    }
+
+    @objc private func menuAddPet() { addPet() }
+    @objc private func menuSync() { syncAllPets() }
+    @objc private func menuRemoveAll() { killAllPets() }
+    @objc private func menuLeadTour() { launchCampusTour() }
+    @objc private func menuReturnToDesktop() {
+        postTourMode("desktop") { [weak self] _ in self?.setTourMode(false) }
+    }
+    @objc private func menuQuit() { NSApp.terminate(nil) }
+
+    @objc private func menuSelectPet(_ sender: NSMenuItem) {
+        guard let folder = sender.representedObject as? String else { return }
+        selectPet(folder)
+    }
+
+    @objc private func menuRefresh() { refreshCatalog() }
+
+    @objc private func menuOpenXML() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.allowedContentTypes = [UTType.xml]
+        panel.message = "Choose a desktopPet animations.xml"
+        NSApp.activate(ignoringOtherApps: true)
+        if panel.runModal() == .OK, let url = panel.url {
+            do {
+                try loadPet(at: url)
+                currentPetFolder = url.path
+                addPet()
+            } catch {
+                presentError(error)
+            }
+        }
+    }
+
+    @objc private func menuScale(_ sender: NSMenuItem) {
+        scale = sender.tag
+        rebuildMenu()
+    }
+
+    @objc private func menuToggleSound() {
+        soundEnabled.toggle()
+        rebuildMenu()
+    }
+
+    @objc private func menuToggleMultiscreen() {
+        multiscreen.toggle()
+        rebuildMenu()
+    }
+
+    @objc private func menuAbout() {
+        guard let d = definition else { return }
+        let alert = NSAlert()
+        alert.messageText = "\(d.title) \(d.version)"
+        let info = d.info
+            .replacingOccurrences(of: "[br]", with: "\n")
+            .replacingOccurrences(of: "[link:", with: "")
+            .replacingOccurrences(of: "]", with: "")
+            .components(separatedBy: "\n")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .joined(separator: "\n")
+        // Catalog pets show their README.md (upstream's "about" text); local files fall back to <info>.
+        if let md = catalog.readme(currentPetFolder) {
+            alert.informativeText = "by \(d.author)"
+            alert.accessoryView = stacked(readmeView(md, folder: currentPetFolder), appCreditView(width: 360))
+        } else {
+            alert.informativeText = "by \(d.author)\n\n\(info)"
+            alert.accessoryView = appCreditView()
+        }
+        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: "License…")
+        if let icon = sheet?.icon { alert.icon = icon }
+        NSApp.activate(ignoringOtherApps: true)
+        if alert.runModal() == .alertSecondButtonReturn { showLicense() }
+    }
+
+    /// Places `top` above `bottom` with a gap, as one accessory view.
+    private func stacked(_ top: NSView, _ bottom: NSView) -> NSView {
+        let gap: CGFloat = 12
+        let width = max(top.frame.width, bottom.frame.width)
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: width,
+                                             height: top.frame.height + gap + bottom.frame.height))
+        bottom.setFrameOrigin(.zero)
+        top.setFrameOrigin(NSPoint(x: 0, y: bottom.frame.height + gap))
+        container.addSubview(top)
+        container.addSubview(bottom)
+        return container
+    }
+
+    /// The pet's README in a scrollable box. Relative links (e.g. "../neko") point into the upstream repo.
+    private func readmeView(_ markdown: String, folder: String) -> NSView {
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 360, height: 190))
+        scroll.hasVerticalScroller = true
+        scroll.borderType = .bezelBorder
+        let view = NSTextView(frame: scroll.contentView.bounds)
+        view.isEditable = false
+        view.drawsBackground = false
+        view.autoresizingMask = [.width]
+        view.textContainerInset = NSSize(width: 6, height: 6)
+        let base = URL(string: "https://github.com/Adrianotiger/desktopPet/tree/master/Pets/\(folder)/")!
+        view.textStorage?.setAttributedString(Self.renderMarkdown(markdown, baseURL: base))
+        scroll.documentView = view
+        return scroll
+    }
+
+    /// Small Markdown renderer for pet READMEs: headings, bullet lists, bold/italic/code and links
+    /// (inline Markdown via AttributedString), plus bare URLs. The first "# Title" is dropped, since the
+    /// dialog already shows the pet's title.
+    static func renderMarkdown(_ markdown: String, baseURL: URL) -> NSAttributedString {
+        let body = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
+        let out = NSMutableAttributedString()
+        var lines = markdown.replacingOccurrences(of: "\r\n", with: "\n").components(separatedBy: "\n")
+        if let first = lines.firstIndex(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty }),
+           lines[first].hasPrefix("# ") {
+            lines.remove(at: first)
+        }
+        var lastWasBlank = true
+        for raw in lines {
+            var line = raw.trimmingCharacters(in: .whitespaces)
+            if line.isEmpty {
+                if !lastWasBlank { out.append(NSAttributedString(string: "\n")) }
+                lastWasBlank = true
+                continue
+            }
+            var font = body
+            if line.hasPrefix("#") {
+                line = line.drop { $0 == "#" }.trimmingCharacters(in: .whitespaces)
+                font = NSFont.boldSystemFont(ofSize: NSFont.systemFontSize)
+                if !lastWasBlank { out.append(NSAttributedString(string: "\n")) }
+            } else if line.hasPrefix("- ") || line.hasPrefix("* ") {
+                line = "•  " + line.dropFirst(2)
+            }
+            let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+            let parsed = (try? AttributedString(markdown: line, options: options, baseURL: baseURL))
+                .map { NSMutableAttributedString($0) } ?? NSMutableAttributedString(string: line)
+            let range = NSRange(location: 0, length: parsed.length)
+            parsed.addAttribute(.foregroundColor, value: NSColor.labelColor, range: range)
+            parsed.addAttribute(.font, value: font, range: range)
+            // Bold/italic/code arrive as inline presentation intents, not fonts, so apply them explicitly.
+            if let attributed = try? AttributedString(markdown: line, options: options, baseURL: baseURL) {
+                for run in attributed.runs {
+                    guard let intent = run.inlinePresentationIntent else { continue }
+                    let r = NSRange(run.range, in: attributed)
+                    var f = font
+                    if intent.contains(.stronglyEmphasized) { f = NSFontManager.shared.convert(f, toHaveTrait: .boldFontMask) }
+                    if intent.contains(.emphasized) { f = NSFontManager.shared.convert(f, toHaveTrait: .italicFontMask) }
+                    if intent.contains(.code) { f = NSFont.monospacedSystemFont(ofSize: font.pointSize, weight: .regular) }
+                    parsed.addAttribute(.font, value: f, range: r)
+                }
+            }
+            // Make relative links absolute, and link bare URLs.
+            parsed.enumerateAttribute(.link, in: range) { value, r, _ in
+                if let url = value as? URL { parsed.addAttribute(.link, value: url.absoluteURL, range: r) }
+            }
+            if let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) {
+                for match in detector.matches(in: parsed.string, range: range) {
+                    if let url = match.url, parsed.attribute(.link, at: match.range.location, effectiveRange: nil) == nil {
+                        parsed.addAttribute(.link, value: url, range: match.range)
+                    }
+                }
+            }
+            out.append(parsed)
+            out.append(NSAttributedString(string: "\n"))
+            lastWasBlank = false
+        }
+        while out.string.hasSuffix("\n") { out.deleteCharacters(in: NSRange(location: out.length - 1, length: 1)) }
+        return out
+    }
+
+    /// LICENSE is hard-wrapped at ~78 columns; join those lines so the text view can wrap it to its own width.
+    /// Copyright lines (and their indented continuation) keep their line breaks.
+    static func reflow(_ text: String) -> String {
+        let paragraphs = text.replacingOccurrences(of: "\r\n", with: "\n").components(separatedBy: "\n\n")
+        return paragraphs.map { para -> String in
+            let lines = para.split(separator: "\n", omittingEmptySubsequences: true)
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+            if lines.first?.hasPrefix("Copyright") == true { return lines.joined(separator: "\n") }
+            return lines.joined(separator: " ")
+        }
+        .joined(separator: "\n\n")
+    }
+
+    /// Shows the MIT license bundled in the app (build-app.sh copies LICENSE into Contents/Resources).
+    private func showLicense() {
+        let licenseURL = URL(string: "https://github.com/iappyx/DesktopPetMac/blob/main/LICENSE")!
+        guard let url = Bundle.main.url(forResource: "LICENSE", withExtension: nil),
+              let text = try? String(contentsOf: url, encoding: .utf8) else {
+            NSWorkspace.shared.open(licenseURL)          // e.g. `swift run`, where there is no app bundle
+            return
+        }
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 520, height: 300))
+        scroll.hasVerticalScroller = true
+        scroll.borderType = .bezelBorder
+        let view = NSTextView(frame: scroll.contentView.bounds)
+        view.string = Self.reflow(text)
+        view.font = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
+        view.isEditable = false
+        view.autoresizingMask = [.width]
+        view.textContainerInset = NSSize(width: 4, height: 4)
+        scroll.documentView = view
+
+        let alert = NSAlert()
+        alert.messageText = "License"
+        alert.window.initialFirstResponder = nil
+        alert.informativeText = "Desktop Pet for macOS is licensed under the MIT License."
+        alert.accessoryView = scroll
+        NSApp.activate(ignoringOtherApps: true)
+        alert.runModal()
+    }
+
+    /// Fits a pet icon into an 18x18 menu image without distorting it (some icons are not square).
+    static func menuIcon(_ icon: NSImage) -> NSImage {
+        let side: CGFloat = 18
+        let scale = min(side / max(icon.size.width, 1), side / max(icon.size.height, 1))
+        let w = icon.size.width * scale, h = icon.size.height * scale
+        return NSImage(size: NSSize(width: side, height: side), flipped: false) { _ in
+            icon.draw(in: NSRect(x: (side - w) / 2, y: (side - h) / 2, width: w, height: h))
+            return true
+        }
+    }
+
+    /// CFBundleShortVersionString from build-app.sh; "dev" when run without an app bundle (swift run).
+    static var appVersion: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
+    }
+
+    /// The app's own credit, set apart from the pet's info text by a divider.
+    private func appCreditView(width: CGFloat = 260) -> NSView {
+        let text = NSMutableAttributedString(
+            string: "Desktop Pet for macOS \(Self.appVersion)\ngithub.com/iappyx/DesktopPetMac\n\n"
+                + "Port of Adriano Petrucci's desktopPet.\n\n"
+                + "MIT License\n"
+                + "© Adriano Petrucci and the desktopPet contributors\n"
+                + "© 2026 iappyx",
+            attributes: [
+                .font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize),
+                .foregroundColor: NSColor.secondaryLabelColor,
+            ])
+        text.addAttribute(.font, value: NSFont.boldSystemFont(ofSize: NSFont.smallSystemFontSize),
+                          range: NSRange(location: 0, length: "Desktop Pet for macOS \(Self.appVersion)".count))
+        let link = (text.string as NSString).range(of: "desktopPet")
+        text.addAttribute(.link, value: URL(string: "https://github.com/Adrianotiger/desktopPet")!, range: link)
+        let repo = (text.string as NSString).range(of: "github.com/iappyx/DesktopPetMac")
+        text.addAttribute(.link, value: URL(string: "https://github.com/iappyx/DesktopPetMac")!, range: repo)
+
+        let label = NSTextField(labelWithAttributedString: text)
+        label.isSelectable = true               // needed for the link to be clickable
+        label.allowsEditingTextAttributes = true
+        label.preferredMaxLayoutWidth = width
+        label.lineBreakMode = .byWordWrapping
+        label.maximumNumberOfLines = 0
+        let labelHeight = label.fittingSize.height
+
+        let gap: CGFloat = 10
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: width, height: labelHeight + gap + 1))
+        let divider = NSBox(frame: NSRect(x: 0, y: labelHeight + gap, width: width, height: 1))
+        divider.boxType = .separator
+        label.frame = NSRect(x: 0, y: 0, width: width, height: labelHeight)
+        container.addSubview(divider)
+        container.addSubview(label)
+        return container
+    }
+}
+
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    let manager = PetManager()
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApp.setActivationPolicy(.accessory)
+        SoundPlayer.shared.enabled = manager.soundEnabled
+        manager.installStatusItem()
+        manager.startTourBridge()
+
+        // Optional: path to an animations.xml as the first argument; otherwise the last used pet.
+        let args = CommandLine.arguments.dropFirst()
+        var localPath: String?
+        if let path = args.first(where: { $0.hasSuffix(".xml") }) {
+            localPath = path
+        } else if manager.currentPetFolder.hasPrefix("/") {
+            localPath = manager.currentPetFolder
+        }
+        if let path = localPath {
+            do {
+                try manager.loadPet(at: URL(fileURLWithPath: path))
+            } catch {
+                // An explicit argument deserves an error; a remembered file that has since moved does not.
+                if path != manager.currentPetFolder { manager.presentError(error) }
+                NSLog("DesktopPet: cannot load \(path): \(error)")
+            }
+        }
+
+        if manager.definition != nil {
+            manager.addPet()
+            manager.refreshCatalog()
+            return
+        }
+
+        // Catalog pet: start right away from the cache, then check for a newer version in the background
+        // (used from the next launch or selection on).
+        let folder = PetCatalog.isValidFolder(manager.currentPetFolder) ? manager.currentPetFolder : Self.defaultPet
+        if let cached = manager.catalog.cachedXML(for: folder), (try? manager.loadPet(at: cached)) != nil {
+            manager.addPet()
+            manager.refreshCatalog { [manager] in
+                if !manager.catalog.isUpToDate(folder) { manager.catalog.fetchPet(folder) { _ in } }
+            }
+            return
+        }
+
+        // Nothing cached yet (first launch): download the pet list, then the pet.
+        manager.refreshCatalog { [manager] in
+            let pick = manager.catalog.entry(folder) != nil ? folder : Self.defaultPet
+            manager.selectPet(pick) { error in
+                let alert = NSAlert()
+                alert.messageText = "No pet could be loaded"
+                alert.informativeText = "Pets are downloaded from github.com/Adrianotiger/desktopPet, "
+                    + "which failed: \(error.localizedDescription)\n\n"
+                    + "Check your internet connection and use the menu bar icon → Pet → Refresh pet list, "
+                    + "or open a local animations.xml."
+                NSApp.activate(ignoringOtherApps: true)
+                alert.runModal()
+            }
+        }
+    }
+
+    static let defaultPet = "esheep64"
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+}
+
+@main
+enum DesktopPetApp {
+    static func main() {
+        let app = NSApplication.shared
+        let delegate = AppDelegate()
+        app.delegate = delegate
+        app.run()
+    }
+}

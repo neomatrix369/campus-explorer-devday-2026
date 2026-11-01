@@ -31,6 +31,21 @@ npm run build
 
 **Core journey:** choose UCL Bloomsbury, ask for “quiet seat with charging and water”, inspect the suggested floor in 3D, then open the official campus map to verify details before travelling. Drag to rotate, scroll to zoom, or move the time slider to compare estimates. The Map lab also accepts GeoJSON polygons, building JSON, or a written description for an illustrative three-floor building. Imports stay in browser memory for the session.
 
+### Woolly: desktop to 3D and back
+
+On macOS 12 or newer, start the web app, then run the desktop pet in a second terminal:
+
+```bash
+cd native-pet
+swift run
+```
+
+The sheep downloads its animation from the credited upstream catalog on first launch. Right-click the sheep or use its menu-bar paw icon and choose **Lead CampusExplorer tour**. It leaves the desktop, appears beside the selected building in the 3D scene, and leads the six-stop tour. Choose **Exit tour** to bring it back. The menu-bar **Return to desktop** item also restores it. If the web app runs on another port, use `CAMPUS_URL=http://127.0.0.1:3001 swift run`, replacing 3001 with that port. In a browser without the native app, **🐑 Follow Woolly** runs the same tour.
+
+[Watch the 43-second sheep-led 3D tour](demo/woolly-3d-tour.mp4). The clip shows the browser half of the handoff; the native desktop pet runs locally on macOS.
+
+This build uses a local loopback bridge between the two apps. It does not claim direct OpenAI Dot or Pet account integration; no supported API for Dot activity subscriptions or pet embedding was confirmed for this build.
+
 ## Learn more
 
 - [Combined AI Studio prompt](AI_STUDIO_PROMPT.md)
