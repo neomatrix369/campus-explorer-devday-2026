@@ -12,7 +12,7 @@ final class PetManager: NSObject {
     private let campusURL = URL(string: ProcessInfo.processInfo.environment["CAMPUS_URL"] ?? "http://127.0.0.1:3000")!
 
     var scale: Int {
-        get { let v = defaults.integer(forKey: "scale"); return v == 0 ? 1 : max(1, min(4, v)) }
+        get { let v = defaults.integer(forKey: "scale"); return v == 0 ? 2 : max(1, min(4, v)) }
         set { defaults.set(newValue, forKey: "scale"); pets.forEach { $0.setScale(newValue) } }
     }
     var multiscreen: Bool {
@@ -138,6 +138,16 @@ final class PetManager: NSObject {
         }.resume()
     }
 
+    private func openCampusRoute(_ name: String) {
+        var route = URLComponents(url: campusURL, resolvingAgainstBaseURL: false)!
+        route.queryItems = [URLQueryItem(name: name, value: "1")]
+        NSWorkspace.shared.open(route.url!)
+    }
+
+    func findQuietSpot() {
+        openCampusRoute("sheepFind")
+    }
+
     func launchCampusTour() {
         postTourMode("tour") { [weak self] ok in
             guard let self = self else { return }
@@ -149,9 +159,7 @@ final class PetManager: NSObject {
                 return
             }
             self.setTourMode(true)
-            var tourURL = URLComponents(url: self.campusURL, resolvingAgainstBaseURL: false)!
-            tourURL.queryItems = [URLQueryItem(name: "sheepTour", value: "1")]
-            NSWorkspace.shared.open(tourURL.url!)
+            self.openCampusRoute("sheepTour")
         }
     }
 
@@ -216,6 +224,7 @@ final class PetManager: NSObject {
         menu.addItem(withTitle: "Remove all pets", action: #selector(menuRemoveAll), keyEquivalent: "").target = self
         menu.addItem(.separator())
         menu.addItem(withTitle: "Lead CampusExplorer tour", action: #selector(menuLeadTour), keyEquivalent: "t").target = self
+        menu.addItem(withTitle: "Find a quiet study spot", action: #selector(menuFindQuietSpot), keyEquivalent: "f").target = self
         if tourMode { menu.addItem(withTitle: "Return to desktop", action: #selector(menuReturnToDesktop), keyEquivalent: "r").target = self }
         menu.addItem(.separator())
 
@@ -283,6 +292,7 @@ final class PetManager: NSObject {
     @objc private func menuSync() { syncAllPets() }
     @objc private func menuRemoveAll() { killAllPets() }
     @objc private func menuLeadTour() { launchCampusTour() }
+    @objc private func menuFindQuietSpot() { findQuietSpot() }
     @objc private func menuReturnToDesktop() {
         postTourMode("desktop") { [weak self] _ in self?.setTourMode(false) }
     }
