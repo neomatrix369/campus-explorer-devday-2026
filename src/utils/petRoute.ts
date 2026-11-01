@@ -16,30 +16,73 @@ export function roadAccess(building: CampusBuilding): GroundPoint {
   return (candidates.length ? candidates : fallback).sort((a, b) => Math.hypot(a.x - x, a.z - z) - Math.hypot(b.x - x, b.z - z))[0];
 }
 
-function shareRoad(a: GroundPoint, b: GroundPoint): boolean {
-  return (Math.abs(a.x - b.x) < .01 && ROAD_X.includes(a.x)) || (Math.abs(a.z - b.z) < .01 && ROAD_Z.includes(a.z));
+interface Footprint { left: number; right: number; top: number; bottom: number }
+
+const CLEARANCE = 1.1;
+
+function footprint(building: CampusBuilding): Footprint {
+  const [x, z] = building.position;
+  const [width, , depth] = building.dimensions;
+  return { left: x - width / 2 - CLEARANCE, right: x + width / 2 + CLEARANCE, top: z - depth / 2 - CLEARANCE, bottom: z + depth / 2 + CLEARANCE };
 }
 
-export function streetRoute(start: GroundPoint, end: GroundPoint): GroundPoint[] {
-  const nodes = [start, end, ...ROAD_X.flatMap(x => ROAD_Z.map(z => ({ x, z })))];
-  const distance = nodes.map((_, index) => index ? Infinity : 0);
+function blocked(point: GroundPoint, walls: Footprint[]): boolean {
+  return walls.some(wall => point.x > wall.left && point.x < wall.right && point.z > wall.top && point.z < wall.bottom);
+}
+
+function crossesWall(a: GroundPoint, b: GroundPoint, walls: Footprint[]): boolean {
+  return walls.some(wall => a.x === b.x
+    ? a.x > wall.left && a.x < wall.right && Math.max(a.z, b.z) > wall.top && Math.min(a.z, b.z) < wall.bottom
+    : a.z > wall.top && a.z < wall.bottom && Math.max(a.x, b.x) > wall.left && Math.min(a.x, b.x) < wall.right);
+}
+
+function routeCost(a: GroundPoint, b: GroundPoint): number {
+  const onRoad = a.x === b.x ? ROAD_X.includes(a.x) : ROAD_Z.includes(a.z);
+  return Math.hypot(a.x - b.x, a.z - b.z) * (onRoad ? .45 : 1);
+}
+
+function compressRoute(points: GroundPoint[]): GroundPoint[] {
+  const route: GroundPoint[] = [];
+  for (const point of points) {
+    const [before, last] = route.slice(-2);
+    if (before && last && ((before.x === last.x && last.x === point.x) || (before.z === last.z && last.z === point.z))) route[route.length - 1] = point;
+    else route.push(point);
+  }
+  return route;
+}
+
+/** Orthogonal walkways prefer streets and detour around every building footprint. */
+export function streetRoute(start: GroundPoint, end: GroundPoint, buildings: readonly CampusBuilding[]): GroundPoint[] {
+  const walls = buildings.map(footprint);
+  const xs = [...new Set([start.x, end.x, ...ROAD_X, ...walls.flatMap(wall => [wall.left, wall.right])])].sort((a, b) => a - b);
+  const zs = [...new Set([start.z, end.z, ...ROAD_Z, ...walls.flatMap(wall => [wall.top, wall.bottom])])].sort((a, b) => a - b);
+  const nodes = xs.flatMap(x => zs.map(z => ({ x, z })));
+  const allowed = nodes.map(point => !blocked(point, walls));
+  const index = (x: number, z: number): number => x * zs.length + z;
+  const origin = index(xs.indexOf(start.x), zs.indexOf(start.z));
+  const goal = index(xs.indexOf(end.x), zs.indexOf(end.z));
+  const distance = nodes.map((_, node) => node === origin ? 0 : Infinity);
   const previous = nodes.map(() => -1);
   const visited = new Set<number>();
   while (visited.size < nodes.length) {
     let current = -1;
-    distance.forEach((value, index) => { if (!visited.has(index) && (current < 0 || value < distance[current])) current = index; });
-    if (current < 0 || !Number.isFinite(distance[current]) || current === 1) break;
+    distance.forEach((cost, node) => { if (allowed[node] && !visited.has(node) && (current < 0 || cost < distance[current])) current = node; });
+    if (current < 0 || !Number.isFinite(distance[current]) || current === goal) break;
     visited.add(current);
-    nodes.forEach((next, index) => {
-      if (visited.has(index) || !shareRoad(nodes[current], next)) return;
-      const candidate = distance[current] + Math.hypot(next.x - nodes[current].x, next.z - nodes[current].z);
-      if (candidate < distance[index]) { distance[index] = candidate; previous[index] = current; }
-    });
+    const x = Math.floor(current / zs.length);
+    const z = current % zs.length;
+    for (const [nx, nz] of [[x - 1, z], [x + 1, z], [x, z - 1], [x, z + 1]]) {
+      if (nx < 0 || nx >= xs.length || nz < 0 || nz >= zs.length) continue;
+      const next = index(nx, nz);
+      if (!allowed[next] || visited.has(next) || crossesWall(nodes[current], nodes[next], walls)) continue;
+      const candidate = distance[current] + routeCost(nodes[current], nodes[next]);
+      if (candidate < distance[next]) { distance[next] = candidate; previous[next] = current; }
+    }
   }
-  if (!Number.isFinite(distance[1])) return [start, end];
-  const route: GroundPoint[] = [];
-  for (let node = 1; node !== -1; node = previous[node]) route.unshift(nodes[node]);
-  return route;
+  if (!Number.isFinite(distance[goal])) return [start];
+  const path: GroundPoint[] = [];
+  for (let node = goal; node !== -1; node = previous[node]) path.unshift(nodes[node]);
+  return compressRoute(path);
 }
 
 /** A short, clear corridor from the nearest road-facing wall into the lobby. */

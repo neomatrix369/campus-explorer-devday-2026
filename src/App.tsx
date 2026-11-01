@@ -243,13 +243,14 @@ export default function App() {
     const focusTimer = window.setTimeout(() => sceneRef.current?.focus(stop.buildingId), 350);
     let nextTimer: number | undefined;
     const advance = () => { nextTimer = window.setTimeout(() => {
+      if (petTour && !sceneRef.current?.atDestination()) { advance(); return; }
       if (tourIndex === TOUR_STOPS.length - 1 && !tourLoop) {
         if (petTour) finishPetExit();
         else { setTourPlaying(false); setTourStarted(false); }
         return;
       }
       setTourIndex(index => (index + 1) % TOUR_STOPS.length);
-    }, 1100); };
+    }, petTour ? 350 : 1100); };
     const cancelNarration = tourVoice ? startNarration(stop.narration, TOUR_AUDIO(tourIndex), advance) : () => undefined;
     if (!tourVoice) nextTimer = window.setTimeout(advance, 5500);
     return () => { clearTimeout(focusTimer); if (nextTimer) clearTimeout(nextTimer); cancelNarration(); };

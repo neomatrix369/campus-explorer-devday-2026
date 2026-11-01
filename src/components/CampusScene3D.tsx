@@ -16,6 +16,7 @@ export interface SceneHandle {
   focus: (buildingId: string) => void;
   reset: () => void;
   capture: () => string | null;
+  atDestination: () => boolean;
 }
 
 interface SceneProps {
@@ -41,6 +42,7 @@ type SceneRuntime = {
   focus: (buildingId: string) => void;
   reset: () => void;
   capture: () => string | null;
+  atDestination: () => boolean;
   update: (props: Pick<SceneProps, 'hour' | 'selectedId' | 'selectedFloor' | 'heatmap' | 'flow' | 'petGuide' | 'petPhase' | 'petMessage' | 'petActivity' | 'petView' | 'petMoving' | 'trees' | 'context'>) => void;
   dispose: () => void;
 };
@@ -72,6 +74,7 @@ function sheepCurl(parent: THREE.Group, x: number): void {
 }
 
 type GuideSheep = { group: THREE.Group; feet: THREE.Mesh[]; eyes: THREE.Mesh[]; eyelids: THREE.Mesh[] };
+const SHEEP_SCALE = .55;
 
 function createGuideSheep(): GuideSheep {
   const group = new THREE.Group();
@@ -96,11 +99,11 @@ function createGuideSheep(): GuideSheep {
     eyelids.push(lid);
   }
   const feet = [-.64, .64].flatMap(x => [-.38, .38].map(z => sheepPart(group, '#ed8958', [x, .37, z], [.17, .34, .16])));
-  group.scale.setScalar(5);
+  group.scale.setScalar(SHEEP_SCALE);
   return { group, feet, eyes, eyelids };
 }
 
-function animateGuideSheep(sheep: GuideSheep, activity: PetActivity, frame: number, reducedMotion: boolean, size = 5): number {
+function animateGuideSheep(sheep: GuideSheep, activity: PetActivity, frame: number, reducedMotion: boolean, size = SHEEP_SCALE): number {
   const motion = reducedMotion ? 0 : 1;
   const step = Math.sin(frame * .12);
   sheep.group.rotation.x = activity === 'graze' ? .32 : 0;
@@ -189,9 +192,9 @@ function makeBuilding(building: CampusBuilding, textures: THREE.Texture[]): { gr
   const interior = new THREE.Group();
   interior.visible = false;
   interior.add(box(w * .88, .12, d * .88, '#e9ddc4', 0, .12, 0));
-  const entrance = buildingInteriorRoute(building, roadAccess(building))[0];
+  const [outside, lobby] = buildingInteriorRoute(building, roadAccess(building));
   const door = new THREE.Group();
-  door.position.set(entrance.x - building.position[0], 0, entrance.z - building.position[1]);
+  door.position.set((outside.x + lobby.x) / 2 - building.position[0], 0, (outside.z + lobby.z) / 2 - building.position[1]);
   if (Math.abs(door.position.x) > Math.abs(door.position.z)) door.rotation.y = Math.PI / 2;
   for (const side of [-1, 1]) door.add(box(.28, 3.6, .28, '#6a57ad', side * 1.7, 1.8, 0));
   door.add(box(3.7, .3, .28, '#6a57ad', 0, 3.65, 0));
@@ -303,7 +306,7 @@ function addTrees(scene: THREE.Group): void {
 
 function makeScene(container: HTMLDivElement, labels: HTMLDivElement, campus: CampusProfile, onSelect: (id: string) => void): SceneRuntime {
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(45, 1, 1, 600);
+  const camera = new THREE.PerspectiveCamera(45, 1, .1, 600);
   camera.position.set(85, 145, 155);
   const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
@@ -425,6 +428,7 @@ function makeScene(container: HTMLDivElement, labels: HTMLDivElement, campus: Ca
   renderer.domElement.addEventListener('pointerup', pointerUp);
 
   const applyState = () => {
+    controls.minDistance = state.petGuide ? 2 : 28;
     city.visible = state.context;
     trees.visible = state.trees;
     const solar = sunState(state.hour);
@@ -487,7 +491,7 @@ function makeScene(container: HTMLDivElement, labels: HTMLDivElement, campus: Ca
           const portal = state.petPhase === 'entering' ? new THREE.Vector3(-39, 13, 82) : exitOrigin.clone().addScaledVector(heading, 22).add(new THREE.Vector3(0, 12, 0));
           sheep.group.position.copy(state.petPhase === 'entering' ? portal.lerp(spawn, eased) : exitOrigin.clone().lerp(portal, eased));
           sheep.group.position.y += reducedMotion ? 0 : Math.sin(progress * Math.PI) * 1.3;
-          sheep.group.scale.setScalar(2.2 * (state.petPhase === 'entering' ? .7 + .3 * eased : 1 - .5 * eased));
+          sheep.group.scale.setScalar(SHEEP_SCALE * (state.petPhase === 'entering' ? .7 + .3 * eased : 1 - .5 * eased));
           sheep.group.rotation.set(0, 0, 0);
         } else {
           const next = waypoints[routeIndex];
@@ -495,7 +499,7 @@ function makeScene(container: HTMLDivElement, labels: HTMLDivElement, campus: Ca
             const dx = next.x - sheep.group.position.x;
             const dz = next.z - sheep.group.position.z;
             const distance = Math.hypot(dx, dz);
-            const step = reducedMotion ? distance : Math.min(distance, Math.min(200, timestamp - lastTravelFrame) * .024);
+            const step = reducedMotion ? distance : Math.min(distance, Math.min(200, timestamp - lastTravelFrame) * .0025);
             if (distance > .01) {
               heading.set(dx / distance, 0, dz / distance);
               sheep.group.position.x += heading.x * step;
@@ -504,7 +508,7 @@ function makeScene(container: HTMLDivElement, labels: HTMLDivElement, campus: Ca
             if (distance <= step + .05) routeIndex++;
           }
           sheep.group.rotation.y = Math.atan2(heading.x, heading.z);
-          sheep.group.position.y = .2 + animateGuideSheep(sheep, next && state.petMoving ? 'walk' : state.petActivity, frame, reducedMotion, state.petView === 'drone' ? 2.4 : 1.8);
+          sheep.group.position.y = animateGuideSheep(sheep, next && state.petMoving ? 'walk' : state.petActivity, frame, reducedMotion) * .18;
         }
       }
     }
@@ -512,13 +516,14 @@ function makeScene(container: HTMLDivElement, labels: HTMLDivElement, campus: Ca
     if (sheep.group.visible && frame % 15 === 0) {
       container.dataset.woollyPosition = `${sheep.group.position.x.toFixed(1)},${sheep.group.position.z.toFixed(1)}`;
       container.dataset.woollyStage = routeIndex > interiorStart ? 'inside' : 'street';
+      container.dataset.woollyScale = sheep.group.scale.x.toFixed(2);
     }
     if (sheep.group.visible && state.petPhase === 'touring') {
       const position = sheep.group.position;
       const drone = state.petView === 'drone';
       const inside = routeIndex >= interiorStart;
-      const follow = drone ? position.clone().add(new THREE.Vector3(0, 55, 23)) : position.clone().addScaledVector(heading, inside ? -7 : -13).add(new THREE.Vector3(0, inside ? 4.5 : 7, 0));
-      const look = position.clone().addScaledVector(heading, drone ? 0 : inside ? 4 : 9).add(new THREE.Vector3(0, drone ? 0 : 2.6, 0));
+      const follow = drone ? position.clone().add(new THREE.Vector3(0, 27, 10)) : position.clone().addScaledVector(heading, inside ? -4.2 : -5.5).add(new THREE.Vector3(0, inside ? 2.1 : 2.5, 0));
+      const look = position.clone().addScaledVector(heading, drone ? 0 : inside ? 2 : 3).add(new THREE.Vector3(0, drone ? 0 : .9, 0));
       camera.position.lerp(follow, reducedMotion ? 1 : inside ? .18 : .12);
       controls.target.lerp(look, reducedMotion ? 1 : inside ? .18 : .12);
       controls.update();
@@ -526,7 +531,7 @@ function makeScene(container: HTMLDivElement, labels: HTMLDivElement, campus: Ca
     speechCloud.hidden = !sheep.group.visible || !state.petMessage;
     if (!speechCloud.hidden) {
       if (speechCloud.textContent !== state.petMessage) speechCloud.textContent = state.petMessage;
-      const point = sheep.group.position.clone().add(new THREE.Vector3(0, 5, 0)).project(camera);
+      const point = sheep.group.position.clone().add(new THREE.Vector3(0, 1.7, 0)).project(camera);
       speechCloud.hidden = point.z < -1 || point.z > 1 || Math.abs(point.x) > 1.15 || Math.abs(point.y) > 1.15;
       speechCloud.style.left = `${Math.max(115, Math.min(container.clientWidth - 115, (point.x * .5 + .5) * container.clientWidth))}px`;
       speechCloud.style.top = `${Math.max(80, Math.min(container.clientHeight - 30, (-point.y * .5 + .5) * container.clientHeight))}px`;
@@ -572,6 +577,7 @@ function makeScene(container: HTMLDivElement, labels: HTMLDivElement, campus: Ca
     },
     reset: () => { desiredTarget = new THREE.Vector3(0, 4, 0); desiredCamera = container.clientWidth < 760 ? new THREE.Vector3(85, 220, 230) : new THREE.Vector3(85, 145, 155); },
     capture: () => { renderer.render(scene, camera); return renderer.domElement.toDataURL('image/png'); },
+    atDestination: () => waypoints.length > 0 && routeIndex >= waypoints.length,
     update: next => {
       if (state.petPhase !== next.petPhase) {
         phaseStarted = performance.now();
@@ -580,14 +586,17 @@ function makeScene(container: HTMLDivElement, labels: HTMLDivElement, campus: Ca
       if (next.petGuide && (!state.petGuide || state.selectedId !== next.selectedId)) {
         if (!state.petGuide) sheep.group.position.set(-13, .2, 61);
         if (state.petGuide && state.selectedId) openedBuildings.add(state.selectedId);
-        if (next.selectedId) openedBuildings.add(next.selectedId);
         const building = campus.buildings.find(item => item.id === next.selectedId);
         const previous = campus.buildings.find(item => item.id === state.selectedId);
-        const leaving = previous && routeIndex > interiorStart ? [...buildingInteriorRoute(previous, roadAccess(previous)).reverse().slice(1), roadAccess(previous)] : [];
+        const leaving = previous && routeIndex >= interiorStart ? [buildingInteriorRoute(previous, roadAccess(previous))[0]] : [];
         const start = leaving.length ? leaving[leaving.length - 1] : { x: sheep.group.position.x, z: sheep.group.position.z };
-        const street = building ? streetRoute(start, roadAccess(building)).slice(1) : [];
-        waypoints = building ? [...leaving, ...street, ...buildingInteriorRoute(building, roadAccess(building))] : [];
+        const interior = building ? buildingInteriorRoute(building, roadAccess(building)) : [];
+        const outsideRoute = building ? streetRoute(start, interior[0], campus.buildings) : [];
+        const reachable = outsideRoute.length > 0 && outsideRoute[outsideRoute.length - 1].x === interior[0]?.x && outsideRoute[outsideRoute.length - 1].z === interior[0]?.z;
+        const street = reachable ? outsideRoute.slice(1) : [];
+        waypoints = reachable ? [...leaving, ...street, ...interior.slice(1)] : leaving;
         interiorStart = leaving.length + street.length;
+        if (reachable && next.selectedId) openedBuildings.add(next.selectedId);
         routeIndex = 0;
         desiredCamera = desiredTarget = null;
       }
@@ -632,6 +641,7 @@ export const CampusScene3D = forwardRef<SceneHandle, SceneProps>(function Campus
     focus: id => runtime.current?.focus(id),
     reset: () => runtime.current?.reset(),
     capture: () => runtime.current?.capture() ?? null,
+    atDestination: () => runtime.current?.atDestination() ?? false,
   }), []);
 
   useEffect(() => {
