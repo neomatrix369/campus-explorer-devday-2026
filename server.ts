@@ -4,7 +4,7 @@ import { createServer as createViteServer } from 'vite';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { ALL_BUILDINGS, UNIVERSITIES } from './src/data/campusData.ts';
-import { rankStudySpaces, recommendStudySpot } from './src/utils/campusLogic.ts';
+import { explainStudySpot, rankStudySpaces, recommendStudySpot, spotCriteria } from './src/utils/campusLogic.ts';
 
 config();
 
@@ -12,6 +12,16 @@ const app = express();
 const root = path.dirname(fileURLToPath(import.meta.url));
 const port = Number(process.env.PORT) || 3000;
 const apiKey = process.env.AI_API_KEY?.trim();
+
+function estimatedModelCost(usage: unknown): number | null {
+  if (!process.env.AI_INPUT_USD_PER_M?.trim() || !process.env.AI_OUTPUT_USD_PER_M?.trim()) return null;
+  const inputRate = Number(process.env.AI_INPUT_USD_PER_M);
+  const outputRate = Number(process.env.AI_OUTPUT_USD_PER_M);
+  const tokens = usage as { input_tokens?: number; output_tokens?: number } | null;
+  if (!tokens || !Number.isFinite(inputRate) || !Number.isFinite(outputRate) || inputRate < 0 || outputRate < 0) return null;
+  if (!Number.isFinite(tokens.input_tokens) || !Number.isFinite(tokens.output_tokens)) return null;
+  return Number(((tokens.input_tokens! * inputRate + tokens.output_tokens! * outputRate) / 1_000_000).toFixed(6));
+}
 
 app.use(express.json({ limit: '1mb' }));
 
@@ -28,7 +38,7 @@ app.post('/api/ai/concierge', async (request, response) => {
   const campus = UNIVERSITIES.flatMap(university => university.campuses).find(item => item.id === campusId);
   const buildings = campus?.buildings ?? ALL_BUILDINGS;
   const local = recommendStudySpot(query, buildings, hour);
-  if (!apiKey || !local.match) return response.json({ ...local, source: 'local', usage: null });
+  if (!apiKey || !local.match) return response.json({ ...local, source: 'local', usage: null, costUsd: 0 });
 
   try {
     const candidates = rankStudySpaces(buildings, hour).slice(0, 18).map(spot => ({
@@ -61,9 +71,14 @@ app.post('/api/ai/concierge', async (request, response) => {
     if (!selected) throw new Error('Model selected an unavailable floor');
     const match = rankStudySpaces(buildings, hour).find(item => item.building.id === parsed.buildingId && item.floor.level === parsed.floorLevel);
     if (!match) throw new Error('Selected floor is closed');
-    return response.json({ headline: `${match.building.name} · ${match.floor.level}`, explanation: parsed.explanation.slice(0, 220), match, criteria: local.criteria, source: 'model', usage: payload.usage ?? null });
+    const modelExplanation = parsed.explanation.slice(0, 180);
+    const explanation = /\b(live|real.time|verified|guaranteed|reserved|booked|confirmed)\b/i.test(modelExplanation)
+      ? explainStudySpot(match, hour)
+      : `${modelExplanation} Figures are estimates; verify access and availability.`;
+    const criteria = spotCriteria(match);
+    return response.json({ headline: `${match.building.name} · ${match.floor.level}`, explanation, match, criteria, source: 'model', usage: payload.usage ?? null, costUsd: estimatedModelCost(payload.usage) });
   } catch {
-    return response.json({ ...local, source: 'local-fallback', usage: null });
+    return response.json({ ...local, source: 'local-fallback', usage: null, costUsd: null });
   }
 });
 
@@ -91,7 +106,8 @@ async function start(): Promise<void> {
     app.use(express.static(path.join(root, 'dist')));
     app.get('*', (_request, response) => response.sendFile(path.join(root, 'dist/index.html')));
   } else {
-    const vite = await createViteServer({ server: { middlewareMode: true, hmr: process.env.DISABLE_HMR === 'true' ? false : undefined }, appType: 'spa' });
+    const hmrPort = port + 20_000;
+    const vite = await createViteServer({ server: { middlewareMode: true, hmr: { port: hmrPort, clientPort: hmrPort } }, appType: 'spa' });
     app.use(vite.middlewares);
   }
   app.listen(port, '0.0.0.0', () => console.log(`CampusExplorer running at http://localhost:${port}`));

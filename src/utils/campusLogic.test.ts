@@ -7,7 +7,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { ALL_BUILDINGS, UNIVERSITIES } from '../data/campusData.ts';
 import { estimatedOccupancy, formatHour, isOpenAt, parseStudyQuery, rankStudySpaces, recommendStudySpot } from './campusLogic.ts';
-import { campusGeoJson, campusPdf, parseBlueprint } from './mapExports.ts';
+import { campusGeoJson, campusPdf, parseBlueprint, synthesizeBlueprint } from './mapExports.ts';
 
 /** Scenario: The first-run map covers London. Slice: multi-university exploration.
  * Given the bundled campus profiles, when they are counted, then all four universities and seven campuses have 27 selectable buildings. */
@@ -100,13 +100,15 @@ test('PDF and GeoJSON exports contain the current campus buildings', () => {
   assert.ok(new TextDecoder().decode(pdf).startsWith('%PDF-1.4') && pdf.byteLength > 1200 && geo.features.length === campus.buildings.length);
 });
 
-/** Scenario: A map lab input becomes selectable geometry. Slice: blueprint import.
- * Given a valid minimal JSON building, when parsed, then it has a usable default floor and is marked schematic. */
+/** Scenario: Map lab inputs become selectable geometry. Slice: blueprint import.
+ * Given JSON and a written building description, when parsed, then both create bounded schematic buildings and the description has three floors. */
 test('blueprint parser creates a bounded schematic building', () => {
   // -- Given --
   const raw = JSON.stringify({ name: 'Test Study Annex', position: [200, 0], dimensions: [4, 99, 4] });
   // -- When --
   const building = parseBlueprint(raw, 3);
+  const described = synthesizeBlueprint('Garden study hub', 4);
   // -- Then --
   assert.deepEqual([building.position[0], building.dimensions, building.floors.length, building.schematic], [70, [8, 45, 8], 1, true]);
+  assert.deepEqual([described.name, described.floors.length, described.schematic], ['Garden study hub', 3, true]);
 });

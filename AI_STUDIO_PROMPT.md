@@ -27,6 +27,8 @@ Rank floor-level study spaces by quietness, estimated seats free, access at the 
 
 Add Play, Pause, Next and Replay for a short guided tour across all four universities. Use browser speech for narration when server TTS is unavailable. Provide a camera photo capture, a vector PDF campus summary and a GeoJSON download of the schematic layout. Give students the official map and booking links for verification. An optional map lab can turn a valid vector building description into a new, clearly marked schematic building.
 
+Provide a photo contact sheet and per-query AI usage telemetry. Show zero model tokens and zero AI cost for local recommendations. When a model is used, show returned token counts and estimate cost only when its current input and output rates have been configured; otherwise label cost as unpriced. Support a simple written building description as a three-floor illustrative 3D building, alongside JSON blueprints and GeoJSON polygons. Make clear that written descriptions do not establish a surveyed layout.
+
 ## Engineering and acceptance
 
 Use React, TypeScript, Three.js, Vite and a small Node server. Keep geometry/data, ranking logic, scene rendering and panels in separate modules. Do not require a Google Maps key. Handle empty/error states and keyboard access. At minimum, verify type checking, production build, ranking tests and browser checks at 1280 px and 390 px. All primary controls must work, and the no-key path must be usable end to end.

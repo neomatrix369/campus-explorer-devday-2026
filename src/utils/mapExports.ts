@@ -92,7 +92,7 @@ export function parseBlueprint(raw: string, index: number): CampusBuilding {
   const dimensions = Array.isArray(input.dimensions) ? input.dimensions : [14, 16, 12];
   const floorsInput = Array.isArray(input.floors) ? input.floors : [];
   const floors: FloorZone[] = floorsInput.length ? floorsInput.slice(0, 10).map((value, i) => {
-    const item = value as Record<string, unknown>;
+    const item = value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
     const type = item.type === 'Silent' || item.type === 'Group' ? item.type : 'Quiet';
     return { level: String(item.level ?? i + 1).slice(0, 4), name: String(item.name ?? `Floor ${i + 1}`).slice(0, 50), type, seats: Number(item.seats) > 0 ? Math.min(500, Number(item.seats)) : 40, baseOccupancy: .45, noiseDba: type === 'Silent' ? 31 : type === 'Group' ? 52 : 40, sockets: true, water: false, bookable: false };
   }) : [{ level: '1', name: 'Schematic quiet study', type: 'Quiet', seats: 40, baseOccupancy: .4, noiseDba: 40, sockets: true, water: false, bookable: false }];
@@ -106,11 +106,30 @@ export function parseBlueprint(raw: string, index: number): CampusBuilding {
   };
 }
 
+export function synthesizeBlueprint(description: string, index: number): CampusBuilding {
+  const name = description.trim().replace(/\s+/g, ' ').slice(0, 60);
+  if (!name) throw new Error('Describe the building to add it to the map.');
+  const angle = index * 1.25;
+  const position: [number, number] = [Math.round(Math.cos(angle) * 42), Math.round(Math.sin(angle) * 37)];
+  const type = /group|collaborat|social/i.test(name) ? 'Group' : 'Quiet';
+  return parseBlueprint(JSON.stringify({
+    name,
+    position,
+    dimensions: [15, 18, 13],
+    floors: [
+      { level: '1', name: 'Study commons', type, seats: 48 },
+      { level: '2', name: 'Quiet study', type: 'Quiet', seats: 40 },
+      { level: '3', name: 'Silent study', type: 'Silent', seats: 32 },
+    ],
+  }), index);
+}
+
 export function parseGeoJsonBuildings(raw: string, startIndex: number): CampusBuilding[] {
   let input: { type?: string; features?: { type?: string; properties?: Record<string, unknown>; geometry?: { type?: string; coordinates?: unknown } }[] };
   try { input = JSON.parse(raw); } catch { throw new Error('The GeoJSON file is not valid JSON.'); }
-  if (input.type !== 'FeatureCollection' || !Array.isArray(input.features)) throw new Error('Upload a GeoJSON FeatureCollection.');
+  if (!input || input.type !== 'FeatureCollection' || !Array.isArray(input.features)) throw new Error('Upload a GeoJSON FeatureCollection.');
   const polygons = input.features.flatMap(feature => {
+    if (!feature || typeof feature !== 'object') return [];
     const coordinates = feature.geometry?.coordinates;
     if (feature.geometry?.type !== 'Polygon' || !Array.isArray(coordinates) || !Array.isArray(coordinates[0])) return [];
     const ring = (coordinates[0] as unknown[]).filter(point => Array.isArray(point) && point.length >= 2 && Number.isFinite(Number(point[0])) && Number.isFinite(Number(point[1]))).map(point => [Number((point as number[])[0]), Number((point as number[])[1])] as [number, number]);

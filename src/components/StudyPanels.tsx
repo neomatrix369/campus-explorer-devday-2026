@@ -8,6 +8,7 @@ interface LeftProps {
   campus: CampusProfile;
   hour: number;
   recommendation: Recommendation | null;
+  usageText: string;
   loading: boolean;
   onAsk: (query: string) => void;
   onSelect: (id: string, floor?: string) => void;
@@ -17,7 +18,7 @@ interface LeftProps {
 
 const examples = ['Find a quiet spot now', 'Quiet study for 2 hours', 'Group of 4, need to talk', 'Quiet seat with charging and water'];
 
-export function LeftRail({ campus, hour, recommendation, loading, onAsk, onSelect, mobileOpen, onClose }: LeftProps) {
+export function LeftRail({ campus, hour, recommendation, usageText, loading, onAsk, onSelect, mobileOpen, onClose }: LeftProps) {
   const [query, setQuery] = useState('');
   const [search, setSearch] = useState('');
   const [duration, setDuration] = useState('2');
@@ -50,6 +51,7 @@ export function LeftRail({ campus, hour, recommendation, loading, onAsk, onSelec
         <span className="eyebrow">Suggested floor · estimated</span>
         <strong>{recommendation.headline}</strong>
         <p>{recommendation.explanation}</p>
+        {usageText && <small className="usage-line">AI usage: {usageText}</small>}
         {recommendation.match && <button className="text-button" onClick={() => onSelect(recommendation.match!.building.id, recommendation.match!.floor.level)}>Show in 3D <ArrowUpRight size={14} /></button>}
       </div>}
     </section>

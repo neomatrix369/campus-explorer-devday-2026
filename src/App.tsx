@@ -3,7 +3,7 @@ import { ArrowUpRight, Camera, ChevronDown, Clock3, Compass, Download, FileJson,
 import { ALL_BUILDINGS, UNIVERSITIES, findBuildingLocation, type CampusBuilding, type CampusProfile } from './data/campusData.ts';
 import { TOUR_STOPS } from './data/tour.ts';
 import { recommendStudySpot, formatHour, sunState, type Recommendation } from './utils/campusLogic.ts';
-import { campusGeoJson, campusPdf, downloadBlob, parseBlueprint, parseGeoJsonBuildings } from './utils/mapExports.ts';
+import { campusGeoJson, campusPdf, downloadBlob, parseBlueprint, parseGeoJsonBuildings, synthesizeBlueprint } from './utils/mapExports.ts';
 import { createSoundscape, type SoundMode } from './utils/soundscape.ts';
 import { startNarration } from './utils/narration.ts';
 import { CampusScene3D, type SceneHandle } from './components/CampusScene3D.tsx';
@@ -11,10 +11,11 @@ import { BuildingInspector, LeftRail } from './components/StudyPanels.tsx';
 import { FloorExplorer } from './components/FloorExplorer.tsx';
 
 type ToolPanel = 'none' | 'exports' | 'map-lab' | 'photo';
+type ApiRecommendation = Recommendation & { source?: 'local' | 'local-fallback' | 'model'; usage?: { input_tokens?: number; output_tokens?: number } | null; costUsd?: number | null };
 
 function currentHour(): number {
   const now = new Date();
-  return now.getHours() + Math.round(now.getMinutes() / 15) * .25;
+  return (now.getHours() + Math.round(now.getMinutes() / 15) * .25) % 24;
 }
 
 function saveDataUrl(url: string, filename: string): void {
@@ -22,6 +23,33 @@ function saveDataUrl(url: string, filename: string): void {
   link.href = url;
   link.download = filename;
   link.click();
+}
+
+async function makeContactSheet(photos: string[]): Promise<string> {
+  const cellWidth = 600;
+  const cellHeight = 380;
+  const canvas = document.createElement('canvas');
+  canvas.width = cellWidth * 2;
+  canvas.height = cellHeight * Math.ceil(photos.length / 2);
+  const context = canvas.getContext('2d');
+  if (!context) throw new Error('Photo export is unavailable in this browser.');
+  context.fillStyle = '#f8f9f8';
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  await Promise.all(photos.map((source, index) => new Promise<void>((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => {
+      const scale = Math.min(cellWidth / image.width, cellHeight / image.height);
+      const width = image.width * scale;
+      const height = image.height * scale;
+      const x = index % 2 * cellWidth + (cellWidth - width) / 2;
+      const y = Math.floor(index / 2) * cellHeight + (cellHeight - height) / 2;
+      context.drawImage(image, x, y, width, height);
+      resolve();
+    };
+    image.onerror = () => reject(new Error('A captured view could not be loaded.'));
+    image.src = source;
+  })));
+  return canvas.toDataURL('image/png');
 }
 
 export default function App() {
@@ -34,6 +62,7 @@ export default function App() {
   const [flow, setFlow] = useState(false);
   const [soundMode, setSoundMode] = useState<SoundMode>('off');
   const [recommendation, setRecommendation] = useState<Recommendation | null>(null);
+  const [telemetry, setTelemetry] = useState({ queries: 0, modelTokens: 0, costUsd: 0, unknownCost: false, lastSource: 'local' });
   const [finding, setFinding] = useState(false);
   const [floorOpen, setFloorOpen] = useState(false);
   const [toolPanel, setToolPanel] = useState<ToolPanel>('none');
@@ -46,7 +75,9 @@ export default function App() {
   const [neuralAvailable, setNeuralAvailable] = useState(false);
   const [photos, setPhotos] = useState<string[]>([]);
   const [photoBusy, setPhotoBusy] = useState(false);
-  const [blueprint, setBlueprint] = useState(JSON.stringify({ name: 'New Study Annex', shortCode: 'NSA', position: [2, -36], dimensions: [15, 18, 12], floors: [{ level: '1', name: 'Quiet study', type: 'Quiet', seats: 48 }, { level: '2', name: 'Silent study', type: 'Silent', seats: 36 }] }, null, 2));
+  const [photoError, setPhotoError] = useState('');
+  const [blueprint, setBlueprint] = useState(JSON.stringify({ name: 'New Study Annex', shortCode: 'NSA', position: [2, -36], dimensions: [15, 18, 12], floors: [{ level: '1', name: 'Study commons', type: 'Group', seats: 48 }, { level: '2', name: 'Quiet study', type: 'Quiet', seats: 40 }, { level: '3', name: 'Silent study', type: 'Silent', seats: 36 }] }, null, 2));
+  const [description, setDescription] = useState('');
   const [labMessage, setLabMessage] = useState('');
   const sceneRef = useRef<SceneHandle>(null);
   const soundRef = useRef<ReturnType<typeof createSoundscape> | null>(null);
@@ -92,28 +123,45 @@ export default function App() {
     setMobileOpen(false);
   }, []);
 
+  const recordTelemetry = useCallback((result: ApiRecommendation) => {
+    setTelemetry(current => ({
+      queries: current.queries + 1,
+      modelTokens: current.modelTokens + (result.usage?.input_tokens ?? 0) + (result.usage?.output_tokens ?? 0),
+      costUsd: current.costUsd + (result.costUsd ?? 0),
+      unknownCost: current.unknownCost || (result.source !== 'local' && result.costUsd == null),
+      lastSource: result.source ?? 'local',
+    }));
+  }, []);
+
   const ask = useCallback(async (query: string) => {
     const trimmed = query.trim();
     if (!trimmed) return;
     const targetUniversity = /\blse\b|economics/i.test(trimmed) ? 'lse' : /\bkcl\b|king'?s/i.test(trimmed) ? 'kcl' : /imperial/i.test(trimmed) ? 'imperial' : /\bucl\b/i.test(trimmed) ? 'ucl' : null;
     const targetCampus = targetUniversity ? UNIVERSITIES.find(item => item.id === targetUniversity)!.campuses[0] : campus;
+    const targetBuildings = targetCampus.id === campusId ? campus.buildings : [...targetCampus.buildings, ...(customBuildings[targetCampus.id] ?? [])];
     if (targetCampus.id !== campusId) setCampusId(targetCampus.id);
-    const local = recommendStudySpot(trimmed, targetCampus.buildings, hour);
+    const local = recommendStudySpot(trimmed, targetBuildings, hour);
     setRecommendation(local);
     if (local.match) { setSelectedId(local.match.building.id); setSelectedFloor(local.match.floor.level); }
     const requestId = ++lastRequest.current;
+    if (targetBuildings.length !== targetCampus.buildings.length) {
+      setFinding(false);
+      recordTelemetry({ ...local, source: 'local', costUsd: 0 });
+      return;
+    }
     setFinding(true);
     try {
       const response = await fetch('/api/ai/concierge', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: trimmed, campusId: targetCampus.id, hour }) });
       if (!response.ok) throw new Error('The recommendation service is unavailable.');
-      const result = await response.json() as Recommendation;
+      const result = await response.json() as ApiRecommendation;
       if (requestId !== lastRequest.current) return;
-      const match = result.match && targetCampus.buildings.some(building => building.id === result.match?.building.id) ? result.match : local.match;
+      const match = result.match && targetBuildings.some(building => building.id === result.match?.building.id) ? result.match : local.match;
       setRecommendation({ ...result, match });
+      recordTelemetry(result);
       if (match) { setSelectedId(match.building.id); setSelectedFloor(match.floor.level); setTimeout(() => sceneRef.current?.focus(match.building.id), 180); }
-    } catch { if (requestId === lastRequest.current) setRecommendation(local); }
+    } catch { if (requestId === lastRequest.current) { setRecommendation(local); recordTelemetry({ ...local, source: 'local-fallback', costUsd: null }); } }
     finally { if (requestId === lastRequest.current) setFinding(false); }
-  }, [campus, campusId, hour]);
+  }, [campus, campusId, customBuildings, hour, recordTelemetry]);
 
   useEffect(() => {
     if (!tourPlaying) return;
@@ -164,6 +212,14 @@ export default function App() {
       setSelectedId(next.id);
     } catch (error) { setLabMessage((error as Error).message); }
   };
+  const addDescription = () => {
+    try {
+      const next = synthesizeBlueprint(description, campus.buildings.length);
+      setCustomBuildings(current => ({ ...current, [campusId]: [...(current[campusId] ?? []), next] }));
+      setLabMessage(`${next.name} added with three illustrative floors. Confirm its real layout and access with the university.`);
+      setSelectedId(next.id);
+    } catch (error) { setLabMessage((error as Error).message); }
+  };
   const importGeoJson = async (file: File | undefined) => {
     if (!file) return;
     try {
@@ -183,7 +239,7 @@ export default function App() {
 
     <CampusScene3D ref={sceneRef} campus={campus} hour={hour} selectedId={selectedId} selectedFloor={selectedFloor} heatmap={heatmap} flow={flow} onSelect={selectBuilding} />
     <div className="map-attribution">Schematic 3D campus · not a surveyed map <a href={campus.sourceUrl} target="_blank" rel="noreferrer">Official map <ArrowUpRight size={12} /></a></div>
-    <LeftRail campus={campus} hour={hour} recommendation={recommendation} loading={finding} onAsk={ask} onSelect={selectBuilding} mobileOpen={mobileOpen} onClose={() => setMobileOpen(false)} />
+    <LeftRail campus={campus} hour={hour} recommendation={recommendation} usageText={telemetry.queries ? `${telemetry.queries} ${telemetry.queries === 1 ? 'query' : 'queries'} · ${telemetry.modelTokens} model tokens · ${telemetry.unknownCost ? 'some model cost unpriced' : `$${telemetry.costUsd.toFixed(6)} estimated AI cost`} · ${telemetry.lastSource.replace('-', ' ')}` : ''} loading={finding} onAsk={ask} onSelect={selectBuilding} mobileOpen={mobileOpen} onClose={() => setMobileOpen(false)} />
     {selected && <BuildingInspector campus={campus} building={selected} hour={hour} selectedFloor={selectedFloor} onFloor={setSelectedFloor} onExpand={() => setFloorOpen(true)} onClose={() => { setSelectedId(null); setSelectedFloor(null); sceneRef.current?.reset(); }} />}
 
     <div className="map-title"><span className="eyebrow">Explore in 3D</span><strong>{university.shortName} · {campus.name}</strong><span>{campus.location}</span></div>
@@ -195,8 +251,8 @@ export default function App() {
 
     {toolPanel !== 'none' && <div className="tool-drawer panel" role="dialog" aria-label={toolPanel === 'photo' ? 'Photo studio' : toolPanel === 'exports' ? 'Map exports' : 'Map lab'}><div className="tool-heading"><strong>{toolPanel === 'photo' ? 'Photo studio' : toolPanel === 'exports' ? 'Take this map with you' : 'Map lab'}</strong><button className="icon-button" onClick={() => setToolPanel('none')} aria-label="Close tools"><X size={18} /></button></div>
       {toolPanel === 'exports' && <div className="tool-content"><p>Download the current schematic and open the official university map to check details.</p><button className="tool-action" onClick={exportPdf}><FileText size={20} /><span><strong>Vector PDF</strong><small>Buildings, floor counts and estimated occupancy</small></span><Download size={16} /></button><button className="tool-action" onClick={exportGeo}><FileJson size={20} /><span><strong>GeoJSON</strong><small>Approximate building footprints</small></span><Download size={16} /></button><a className="tool-action" href={campus.sourceUrl} target="_blank" rel="noreferrer"><Map size={20} /><span><strong>Official campus map</strong><small>{university.name}</small></span><ArrowUpRight size={16} /></a></div>}
-      {toolPanel === 'photo' && <div className="tool-content"><p>Capture the current view or a three-time lighting sequence.</p><div className="tool-buttons"><button className="primary-button" onClick={capture}><Camera size={16} /> Capture view</button><button className="secondary-button" onClick={captureBurst} disabled={photoBusy}>{photoBusy ? 'Capturing…' : 'Day · dusk · night'}</button></div><div className="photo-grid">{photos.map((photo, index) => <button key={`${index}-${photo.slice(-10)}`} onClick={() => saveDataUrl(photo, `campus-explorer-${campus.id}-${index + 1}.png`)} aria-label={`Download photo ${index + 1}`}><img src={photo} alt={`Captured 3D campus view ${index + 1}`} /><span>Download photo {index + 1}</span></button>)}</div>{photos.length === 0 && <p className="empty-state">No photos yet. Capture a view to add it here.</p>}</div>}
-      {toolPanel === 'map-lab' && <div className="tool-content"><p>Upload GeoJSON building polygons or paste a small building description. Imported geometry stays in this browser session.</p><label className="field-label" htmlFor="geojson-file">GeoJSON map file</label><input id="geojson-file" className="file-input" type="file" accept=".geojson,.json,application/geo+json" onChange={event => void importGeoJson(event.target.files?.[0])} /><label className="field-label" htmlFor="blueprint-json">Building JSON</label><textarea id="blueprint-json" value={blueprint} onChange={event => setBlueprint(event.target.value)} spellCheck={false} /><button className="primary-button" onClick={addBlueprint}>Add to 3D campus</button>{labMessage && <p className="lab-message" role="status">{labMessage}</p>}</div>}
+      {toolPanel === 'photo' && <div className="tool-content"><p>Capture the current view or a three-time lighting sequence.</p><div className="tool-buttons"><button className="primary-button" onClick={capture}><Camera size={16} /> Capture view</button><button className="secondary-button" onClick={captureBurst} disabled={photoBusy}>{photoBusy ? 'Capturing…' : 'Day · dusk · night'}</button><button className="secondary-button" disabled={photos.length === 0} onClick={() => void makeContactSheet(photos).then(image => saveDataUrl(image, `campus-explorer-${campus.id}-contact-sheet.png`)).catch(error => setPhotoError((error as Error).message))}>Contact sheet</button></div>{photoError && <p className="lab-message" role="alert">{photoError}</p>}<div className="photo-grid">{photos.map((photo, index) => <button key={`${index}-${photo.slice(-10)}`} onClick={() => saveDataUrl(photo, `campus-explorer-${campus.id}-${index + 1}.png`)} aria-label={`Download photo ${index + 1}`}><img src={photo} alt={`Captured 3D campus view ${index + 1}`} /><span>Download photo {index + 1}</span></button>)}</div>{photos.length === 0 && <p className="empty-state">No photos yet. Capture a view to add it here.</p>}</div>}
+      {toolPanel === 'map-lab' && <div className="tool-content"><p>Upload GeoJSON polygons, describe an illustrative three-floor building, or paste a building JSON spec. Imports stay in this browser session.</p><label className="field-label" htmlFor="geojson-file">GeoJSON map file</label><input id="geojson-file" className="file-input" type="file" accept=".geojson,.json,application/geo+json" onChange={event => void importGeoJson(event.target.files?.[0])} /><label className="field-label" htmlFor="building-description">Building description</label><input id="building-description" className="text-input" value={description} onChange={event => setDescription(event.target.value)} placeholder="e.g. Garden study hub" /><button className="secondary-button" onClick={addDescription}>Create illustrative 3D building</button><label className="field-label" htmlFor="blueprint-json">Building JSON</label><textarea id="blueprint-json" value={blueprint} onChange={event => setBlueprint(event.target.value)} spellCheck={false} /><button className="primary-button" onClick={addBlueprint}>Add JSON building to 3D campus</button>{labMessage && <p className="lab-message" role="status">{labMessage}</p>}</div>}
     </div>}
 
     {floorOpen && selected && <FloorExplorer building={selected} campus={campus} selectedFloor={selectedFloor ?? selected.floors[0].level} hour={hour} onFloor={setSelectedFloor} onClose={() => setFloorOpen(false)} />}

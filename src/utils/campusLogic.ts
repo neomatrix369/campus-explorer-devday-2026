@@ -103,16 +103,25 @@ export function parseStudyQuery(query: string): StudyPreference {
   };
 }
 
+export function spotCriteria(spot: RankedSpot): string[] {
+  const criteria = [spot.floor.type.toLowerCase(), `${spot.seatsFree} estimated seats free`, `${spot.noise} dB estimated noise`];
+  if (spot.floor.sockets) criteria.push('sockets');
+  if (spot.floor.water) criteria.push('water');
+  return criteria;
+}
+
+export function explainStudySpot(spot: RankedSpot, hour: number): string {
+  return `${spot.floor.name} has ${spotCriteria(spot).join(', ')} at ${formatHour(hour)}. Check the official campus page before travelling.`;
+}
+
 export function recommendStudySpot(query: string, buildings: CampusBuilding[], hour: number): Recommendation {
   const preference = parseStudyQuery(query);
   const matches = rankStudySpaces(buildings, hour, preference);
   const fallback = matches.length ? matches : rankStudySpaces(buildings, hour);
   const match = fallback[0] ?? null;
   if (!match) return { headline: 'No study spaces found', explanation: 'Try another campus or time.', match: null, criteria: [] };
-  const criteria = [match.floor.type.toLowerCase(), `${match.seatsFree} estimated seats free`, `${match.noise} dB estimated noise`];
-  if (match.floor.sockets) criteria.push('sockets');
-  if (match.floor.water) criteria.push('water');
-  const explanation = `${match.floor.name} has ${criteria.join(', ')} at ${formatHour(hour)}. Check the official campus page before travelling.`;
+  const criteria = spotCriteria(match);
+  const explanation = explainStudySpot(match, hour);
   return { headline: `${match.building.name} · ${match.floor.level}`, explanation, match, criteria };
 }
 

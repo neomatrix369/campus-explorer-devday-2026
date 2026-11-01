@@ -41,8 +41,36 @@ for (const width of [1280, 390]) {
   await page.screenshot({ path: path.join(out, `floor-${width}.png`) });
   await page.keyboard.press('Escape');
   const closedByEscape = await page.getByRole('dialog', { name: /floor explorer/ }).count() === 0;
+  let extras = null;
+  if (width === 1280) {
+    await page.getByRole('button', { name: 'Photos' }).click();
+    await page.getByRole('button', { name: 'Capture view' }).click();
+    await page.getByRole('button', { name: 'Download photo 1' }).waitFor({ state: 'visible' });
+    const sheetEvent = page.waitForEvent('download');
+    await page.getByRole('button', { name: 'Contact sheet' }).click();
+    const sheet = await sheetEvent;
+    await page.getByRole('button', { name: 'Export', exact: true }).click();
+    const pdfEvent = page.waitForEvent('download');
+    await page.getByRole('button', { name: /Vector PDF/ }).click();
+    const pdf = await pdfEvent;
+    const pdfBytes = await fs.readFile(await pdf.path());
+    const geoEvent = page.waitForEvent('download');
+    await page.getByRole('button', { name: /GeoJSON/ }).click();
+    const geo = await geoEvent;
+    const geoData = JSON.parse(await fs.readFile(await geo.path(), 'utf8'));
+    await page.getByRole('button', { name: 'Map lab' }).click();
+    await page.locator('#building-description').fill('Garden study hub');
+    await page.getByRole('button', { name: 'Create illustrative 3D building' }).click();
+    await page.getByText('Garden study hub added with three illustrative floors.').waitFor({ state: 'visible' });
+    const importedPin = await page.locator('.map-pin[data-building-id^="custom-"]').count();
+    const footprint = { type: 'FeatureCollection', features: [{ type: 'Feature', properties: { name: 'Polygon Study Annex' }, geometry: { type: 'Polygon', coordinates: [[[-0.134, 51.5246], [-0.1339, 51.5246], [-0.1339, 51.5245], [-0.134, 51.5245], [-0.134, 51.5246]]] } }] };
+    await page.locator('#geojson-file').setInputFiles({ name: 'study-annex.geojson', mimeType: 'application/geo+json', buffer: Buffer.from(JSON.stringify(footprint)) });
+    await page.getByText('1 polygon footprint added as schematic 3D buildings.').waitFor({ state: 'visible' });
+    const polygonPin = await page.locator('.map-pin[data-building-id^="geo-"]').count();
+    extras = { contactSheet: sheet.suggestedFilename(), pdf: pdf.suggestedFilename(), pdfValid: pdfBytes.subarray(0, 8).toString() === '%PDF-1.4', geoFeatures: geoData.features.length, importedPin, polygonPin };
+  }
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
-  results.push({ width, initial, answer, closedByEscape, switched, overflow, errors });
+  results.push({ width, initial, answer, closedByEscape, switched, overflow, extras, errors });
   console.log(JSON.stringify(results.at(-1)));
   await page.close();
 }
