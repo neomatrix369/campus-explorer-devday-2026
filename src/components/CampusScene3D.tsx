@@ -21,6 +21,7 @@ interface SceneProps {
   flow: boolean;
   petGuide: boolean;
   petPhase: PetPhase;
+  petMessage: string | null;
   onSelect: (id: string) => void;
 }
 
@@ -28,7 +29,7 @@ type SceneRuntime = {
   focus: (buildingId: string) => void;
   reset: () => void;
   capture: () => string | null;
-  update: (props: Pick<SceneProps, 'hour' | 'selectedId' | 'selectedFloor' | 'heatmap' | 'flow' | 'petGuide' | 'petPhase'>) => void;
+  update: (props: Pick<SceneProps, 'hour' | 'selectedId' | 'selectedFloor' | 'heatmap' | 'flow' | 'petGuide' | 'petPhase' | 'petMessage'>) => void;
   dispose: () => void;
 };
 
@@ -294,8 +295,14 @@ function makeScene(container: HTMLDivElement, labels: HTMLDivElement, campus: Ca
   const sheep = createGuideSheep();
   sheep.group.visible = false;
   scene.add(sheep.group);
+  const speechCloud = document.createElement('div');
+  speechCloud.className = 'sheep-cloud';
+  speechCloud.setAttribute('role', 'status');
+  speechCloud.setAttribute('aria-live', 'polite');
+  speechCloud.hidden = true;
+  labels.appendChild(speechCloud);
 
-  let state: Pick<SceneProps, 'hour' | 'selectedId' | 'selectedFloor' | 'heatmap' | 'flow' | 'petGuide' | 'petPhase'> = { hour: 16, selectedId: null, selectedFloor: null, heatmap: false, flow: true, petGuide: false, petPhase: 'desktop' };
+  let state: Pick<SceneProps, 'hour' | 'selectedId' | 'selectedFloor' | 'heatmap' | 'flow' | 'petGuide' | 'petPhase' | 'petMessage'> = { hour: 16, selectedId: null, selectedFloor: null, heatmap: false, flow: true, petGuide: false, petPhase: 'desktop', petMessage: null };
   let phaseStarted = performance.now();
   let desiredCamera: THREE.Vector3 | null = null;
   let desiredTarget: THREE.Vector3 | null = null;
@@ -402,6 +409,14 @@ function makeScene(container: HTMLDivElement, labels: HTMLDivElement, campus: Ca
         sheep.feet.forEach((foot, index) => { foot.rotation.x = reducedMotion ? 0 : Math.sin(frame * .12 + index * Math.PI) * .35; });
       }
     }
+    speechCloud.hidden = !sheep.group.visible || !state.petMessage;
+    if (!speechCloud.hidden) {
+      if (speechCloud.textContent !== state.petMessage) speechCloud.textContent = state.petMessage;
+      const point = sheep.group.position.clone().add(new THREE.Vector3(0, 13, 0)).project(camera);
+      speechCloud.hidden = point.z < -1 || point.z > 1 || Math.abs(point.x) > 1.15 || Math.abs(point.y) > 1.15;
+      speechCloud.style.left = `${Math.max(115, Math.min(container.clientWidth - 115, (point.x * .5 + .5) * container.clientWidth))}px`;
+      speechCloud.style.top = `${Math.max(80, Math.min(container.clientHeight - 30, (-point.y * .5 + .5) * container.clientHeight))}px`;
+    }
     flowDots.visible = state.flow && !reducedMotion;
     if (flowDots.visible) {
       for (let i = 0; i < 100; i++) {
@@ -478,8 +493,8 @@ export const CampusScene3D = forwardRef<SceneHandle, SceneProps>(function Campus
   }, [props.campus]);
 
   useEffect(() => {
-    runtime.current?.update({ hour: props.hour, selectedId: props.selectedId, selectedFloor: props.selectedFloor, heatmap: props.heatmap, flow: props.flow, petGuide: props.petGuide, petPhase: props.petPhase });
-  }, [props.hour, props.selectedId, props.selectedFloor, props.heatmap, props.flow, props.petGuide, props.petPhase, props.campus]);
+    runtime.current?.update({ hour: props.hour, selectedId: props.selectedId, selectedFloor: props.selectedFloor, heatmap: props.heatmap, flow: props.flow, petGuide: props.petGuide, petPhase: props.petPhase, petMessage: props.petMessage });
+  }, [props.hour, props.selectedId, props.selectedFloor, props.heatmap, props.flow, props.petGuide, props.petPhase, props.petMessage, props.campus]);
 
   return <div className="scene-root" aria-label={`Interactive 3D map of ${props.campus.name}`}>
     <div className="scene-canvas" ref={container} />

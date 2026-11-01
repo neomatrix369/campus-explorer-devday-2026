@@ -31,6 +31,7 @@ final class PetManager: NSObject {
     // MARK: - Pet catalog (downloaded from the upstream repository)
 
     let catalog = PetCatalog()
+    private lazy var speechBubble = PetSpeechBubble()
     /// Shown as the menu header while something is downloading.
     private var status: String?
     private var indexFailed = false
@@ -145,11 +146,27 @@ final class PetManager: NSObject {
     }
 
     func findQuietSpot() {
+        say("Baa! I will sniff out a cosy study seat.")
         openCampusRoute("sheepFind")
     }
 
     func sing() -> Void {
+        say("La la baa!", speak: false)
         SoundPlayer.shared.sing()
+    }
+
+    func saySomethingFun() {
+        let lines = [
+            "Baa! A quiet corner and a cup of tea sounds perfect.",
+            "I found more libraries than grass. London is amazing!",
+            "My woolly wisdom: check the official map before you trot over.",
+        ]
+        if let line = lines.randomElement() { say(line) }
+    }
+
+    private func say(_ text: String, speak: Bool = true) {
+        guard let pet = pets.first, !tourMode else { return }
+        speechBubble.show(text, beside: pet, speak: speak && soundEnabled)
     }
 
     func launchCampusTour() {
@@ -230,6 +247,7 @@ final class PetManager: NSObject {
         menu.addItem(withTitle: "Lead CampusExplorer tour", action: #selector(menuLeadTour), keyEquivalent: "t").target = self
         menu.addItem(withTitle: "Find a quiet study spot", action: #selector(menuFindQuietSpot), keyEquivalent: "f").target = self
         menu.addItem(withTitle: "Hear Woolly sing", action: #selector(menuSing), keyEquivalent: "s").target = self
+        menu.addItem(withTitle: "Woolly says…", action: #selector(menuSay), keyEquivalent: "w").target = self
         if tourMode { menu.addItem(withTitle: "Return to desktop", action: #selector(menuReturnToDesktop), keyEquivalent: "r").target = self }
         menu.addItem(.separator())
 
@@ -299,6 +317,7 @@ final class PetManager: NSObject {
     @objc private func menuLeadTour() { launchCampusTour() }
     @objc private func menuFindQuietSpot() { findQuietSpot() }
     @objc private func menuSing() { sing() }
+    @objc private func menuSay() { saySomethingFun() }
     @objc private func menuReturnToDesktop() {
         postTourMode("desktop") { [weak self] _ in self?.setTourMode(false) }
     }
