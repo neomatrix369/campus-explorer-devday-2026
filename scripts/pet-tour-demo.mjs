@@ -19,6 +19,8 @@ await page.getByRole('button', { name: 'Next tour stop' }).click();
 await page.waitForTimeout(2600);
 await page.getByRole('button', { name: 'Surprise me with a tour stop' }).click();
 await page.waitForTimeout(2800);
+await page.getByRole('button', { name: 'Hear Woolly sing' }).click();
+await page.waitForTimeout(1700);
 await page.getByRole('button', { name: "Woolly's quiet pick" }).click();
 await page.getByText('Woolly found a quiet spot').waitFor();
 await page.waitForTimeout(3500);
