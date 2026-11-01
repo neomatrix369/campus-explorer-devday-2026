@@ -1,6 +1,6 @@
 # Woolly Code Map
 
-This project has two Woolly implementations that work together: the browser 3D pet that leads the CampusExplorer tour, and the native macOS desktop pet that roams outside the browser.
+This repo lives in the `pet-wolly` folder for the Codex-created Pet Wolly project. It has two Woolly implementations that work together: the browser 3D pet that leads the CampusExplorer tour, and the native macOS desktop pet that roams outside the browser.
 
 ## 3D Woolly inside the Campus world
 
