@@ -55,8 +55,9 @@ function box(w: number, h: number, d: number, color: THREE.ColorRepresentation, 
   return createBox([w, h, d], [x, y, z], color);
 }
 
-function sheepPart(parent: THREE.Group, color: string, position: [number, number, number], scale: [number, number, number]): THREE.Mesh {
-  const part = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 12), new THREE.MeshStandardMaterial({ color, roughness: .9 }));
+function sheepPart(parent: THREE.Group, color: string | THREE.Material, position: [number, number, number], scale: [number, number, number]): THREE.Mesh {
+  const material = typeof color === 'string' ? new THREE.MeshStandardMaterial({ color, roughness: .9 }) : color;
+  const part = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 12), material);
   part.position.set(...position);
   part.scale.set(...scale);
   part.castShadow = true;
@@ -64,30 +65,67 @@ function sheepPart(parent: THREE.Group, color: string, position: [number, number
   return part;
 }
 
-function sheepCurl(parent: THREE.Group, x: number): void {
-  const curl = new THREE.Mesh(new THREE.TorusGeometry(.27, .15, 8, 20), new THREE.MeshStandardMaterial({ color: '#75007e', roughness: .74 }));
-  curl.position.set(x, 1.77, 1.14);
-  curl.rotation.z = x < 0 ? -.35 : .35;
-  curl.castShadow = true;
-  parent.add(curl);
-  sheepPart(parent, '#cb39cb', [x - .07, 1.88, 1.27], [.12, .11, .06]);
+function sheepCurl(parent: THREE.Group, side: number): void {
+  for (const [radius, tube, x, color] of [[.37, .13, 1.04, '#7a247f'], [.19, .08, 1.17, '#bb48a6']] as const) {
+    const curl = new THREE.Mesh(new THREE.TorusGeometry(radius, tube, 10, 28), new THREE.MeshStandardMaterial({ color, roughness: .8 }));
+    curl.position.set(side * x, 1.68, .63);
+    curl.rotation.y = Math.PI / 2;
+    curl.castShadow = true;
+    parent.add(curl);
+  }
+  sheepPart(parent, '#56205d', [side * 1.25, 1.68, .63], [.07, .09, .09]);
 }
 
-type GuideSheep = { group: THREE.Group; feet: THREE.Mesh[]; eyes: THREE.Mesh[]; eyelids: THREE.Mesh[] };
+function sheepWoolTexture(): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = 256;
+  const context = canvas.getContext('2d')!;
+  context.fillStyle = '#f6e8a3';
+  context.fillRect(0, 0, 256, 256);
+  for (let index = 0; index < 420; index++) {
+    const x = (index * 83.7) % 256;
+    const y = (index * 137.3) % 256;
+    const radius = 4 + (index % 5) * 1.3;
+    context.strokeStyle = index % 3 === 0 ? 'rgba(125,108,62,.38)' : 'rgba(255,255,226,.78)';
+    context.lineWidth = 2;
+    context.beginPath();
+    context.arc(x, y, radius, .2, Math.PI * 1.35);
+    context.stroke();
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(2, 1.5);
+  return texture;
+}
+
+type GuideSheep = { group: THREE.Group; feet: THREE.Mesh[]; eyes: THREE.Mesh[]; eyelids: THREE.Mesh[]; woolTexture: THREE.CanvasTexture };
 const SHEEP_SCALE = .55;
 
-function createGuideSheep(): GuideSheep {
-  const group = new THREE.Group();
-  sheepPart(group, '#1d1521', [0, 1.2, 0], [1.21, .86, .84]);
-  sheepPart(group, '#fff1a0', [0, 1.29, 0], [1.14, .8, .79]);
-  sheepPart(group, '#aaa47a', [0, .8, .31], [.97, .42, .54]);
-  for (const [x, y, z] of [[-.7, 1.67, -.22], [0, 1.86, -.36], [.7, 1.67, -.22], [-.66, 1.65, .37], [.66, 1.65, .37]] as [number, number, number][])
-    sheepPart(group, '#fff5ba', [x, y, z], [.47, .42, .45]);
-  sheepPart(group, '#1d1521', [0, 1.43, .83], [.57, .6, .35]);
-  sheepPart(group, '#ffbc84', [0, 1.43, .9], [.51, .52, .36]);
-  sheepPart(group, '#ff9a68', [0, 1.18, 1.2], [.47, .27, .28]);
-  sheepPart(group, '#fff3b8', [0, 1.91, .73], [.59, .35, .36]);
-  for (const x of [-.42, .42]) sheepCurl(group, x);
+function addSheepCoat(group: THREE.Group, wool: THREE.Material): void {
+  sheepPart(group, wool, [0, 1.29, 0], [1.14, .8, .79]);
+  sheepPart(group, '#969071', [0, .8, .31], [.97, .4, .54]);
+  sheepPart(group, wool, [0, .99, -.58], [.81, .35, .43]);
+  for (const z of [-.55, -.18, .2, .55]) {
+    for (const x of [-.7, 0, .7]) sheepPart(group, wool, [x, 1.76, z], [.38, .3, .33]);
+    for (const side of [-1, 1]) sheepPart(group, wool, [side * .94, 1.28, z], [.28, .32, .29]);
+  }
+  for (const x of [-.63, 0, .63]) sheepPart(group, wool, [x, 1.08, -.66], [.34, .29, .25]);
+  sheepPart(group, wool, [0, 1.2, -.89], [.27, .3, .26]);
+}
+
+function addSheepHead(group: THREE.Group, wool: THREE.Material): void {
+  sheepPart(group, '#1d1521', [0, 1.43, .83], [.58, .59, .36]);
+  sheepPart(group, '#efac82', [0, 1.42, .91], [.52, .53, .38]);
+  sheepPart(group, '#e89471', [0, 1.17, 1.22], [.44, .24, .27]);
+  sheepPart(group, wool, [0, 1.9, .69], [.59, .31, .38]);
+  for (const side of [-1, 1]) {
+    sheepPart(group, '#d99173', [side * .96, 1.49, .78], [.22, .14, .25]);
+    sheepCurl(group, side);
+  }
+}
+
+function addSheepEyes(group: THREE.Group): Pick<GuideSheep, 'eyes' | 'eyelids'> {
   const eyes: THREE.Mesh[] = [];
   const eyelids: THREE.Mesh[] = [];
   for (const x of [-.22, .22]) {
@@ -98,9 +136,19 @@ function createGuideSheep(): GuideSheep {
     lid.visible = false;
     eyelids.push(lid);
   }
-  const feet = [-.64, .64].flatMap(x => [-.38, .38].map(z => sheepPart(group, '#ed8958', [x, .37, z], [.17, .34, .16])));
+  return { eyes, eyelids };
+}
+
+function createGuideSheep(): GuideSheep {
+  const group = new THREE.Group();
+  const woolTexture = sheepWoolTexture();
+  const wool = new THREE.MeshStandardMaterial({ map: woolTexture, roughness: 1 });
+  addSheepCoat(group, wool);
+  addSheepHead(group, wool);
+  const { eyes, eyelids } = addSheepEyes(group);
+  const feet = [-.64, .64].flatMap(x => [-.38, .38].map(z => sheepPart(group, '#d88556', [x, .37, z], [.17, .34, .16])));
   group.scale.setScalar(SHEEP_SCALE);
-  return { group, feet, eyes, eyelids };
+  return { group, feet, eyes, eyelids, woolTexture };
 }
 
 function animateGuideSheep(sheep: GuideSheep, activity: PetActivity, frame: number, reducedMotion: boolean, size = SHEEP_SCALE): number {
@@ -252,7 +300,7 @@ function createGround(scene: THREE.Scene): void {
   scene.add(ground);
   for (const x of [-70, -13, 64]) scene.add(box(11, .1, 270, cssColor('--map-road'), x, .06, 0));
   for (const z of [-65, -6, 61]) scene.add(box(270, .1, 11, cssColor('--map-road'), 0, .07, z));
-  for (const [x, z, w, d] of [[-95, 27, 25, 34], [77, 79, 35, 31], [-5, -90, 48, 26], [3, 42, 33, 19]] as const) {
+  for (const [x, z, w, d] of [[-95, 27, 25, 34], [84, 84, 23, 23], [7, -90, 24, 26], [8, 42, 22, 19]] as const) {
     scene.add(box(w, .12, d, cssColor('--map-park'), x, .14, z));
   }
   for (let i = -4; i <= 4; i++) {
@@ -371,6 +419,7 @@ function makeScene(container: HTMLDivElement, labels: HTMLDivElement, campus: Ca
   ring.rotation.x = -Math.PI / 2;
   scene.add(ring);
   const sheep = createGuideSheep();
+  textures.push(sheep.woolTexture);
   sheep.group.visible = false;
   scene.add(sheep.group);
   const speechCloud = document.createElement('div');
@@ -522,7 +571,8 @@ function makeScene(container: HTMLDivElement, labels: HTMLDivElement, campus: Ca
       const position = sheep.group.position;
       const drone = state.petView === 'drone';
       const inside = routeIndex >= interiorStart;
-      const follow = drone ? position.clone().add(new THREE.Vector3(0, 27, 10)) : position.clone().addScaledVector(heading, inside ? -4.2 : -5.5).add(new THREE.Vector3(0, inside ? 2.1 : 2.5, 0));
+      const side = new THREE.Vector3(heading.z, 0, -heading.x);
+      const follow = drone ? position.clone().add(new THREE.Vector3(0, 27, 10)) : position.clone().addScaledVector(heading, inside ? -4.2 : -5.5).addScaledVector(side, inside ? .8 : 2.5).add(new THREE.Vector3(0, inside ? 2.1 : 2.5, 0));
       const look = position.clone().addScaledVector(heading, drone ? 0 : inside ? 2 : 3).add(new THREE.Vector3(0, drone ? 0 : .9, 0));
       camera.position.lerp(follow, reducedMotion ? 1 : inside ? .18 : .12);
       controls.target.lerp(look, reducedMotion ? 1 : inside ? .18 : .12);
