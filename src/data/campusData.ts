@@ -125,8 +125,10 @@ export const UNIVERSITIES: UniversityProfile[] = [
       building({ id: 'kcl-bush', name: 'Bush House', code: 'BHS', category: 'Study hub', x: 37, z: -18, w: 20, d: 17, h: 25, style: 'modern', color: '#cbbba7' }),
       building({ id: 'kcl-strand', name: 'Strand Building', code: 'STR', category: 'Faculty study', x: -10, z: 31, w: 22, d: 15, h: 19, style: 'glass', color: '#abb9b8' }),
     ] },
-    { id: 'kcl-waterloo-guys', name: "Waterloo & Guy's", location: 'South Bank and London Bridge', sourceUrl: 'https://www.kcl.ac.uk/visit/london-maps', buildings: [
+    { id: 'kcl-waterloo', name: 'Waterloo', location: 'Waterloo Road · SE1 8WA', sourceUrl: 'https://www.kcl.ac.uk/visit/waterloo-campus', buildings: [
       building({ id: 'kcl-franklin-wilkins', name: 'Franklin-Wilkins Building', code: 'FWB', category: 'Study centre', x: -25, z: 0, w: 29, d: 20, h: 21, style: 'modern', color: '#c1bbae' }),
+    ] },
+    { id: 'kcl-guys', name: "Guy's", location: 'Great Maze Pond · SE1 1UL', sourceUrl: 'https://www.kcl.ac.uk/visit/guys-campus', buildings: [
       building({ id: 'kcl-new-hunt', name: "New Hunt's House", code: 'NHH', category: 'Library', x: 20, z: -20, w: 21, d: 20, h: 23, style: 'brick', color: '#b77a63' }),
       building({ id: 'kcl-guy', name: "Guy's Tower", code: 'GWT', category: 'Campus hub', x: 24, z: 20, w: 16, d: 16, h: 38, style: 'tower', color: '#b9b8b0' }),
     ] },
@@ -168,7 +170,7 @@ export function findBuildingLocation(id: string): { university: UniversityProfil
 
 export const CAMPUS_CENTERS: Record<string, [number, number]> = {
   'ucl-bloomsbury': [-.1340, 51.5246], 'ucl-east': [-.0087, 51.5381],
-  'kcl-strand': [-.1163, 51.5115], 'kcl-waterloo-guys': [-.1122, 51.5040],
+  'kcl-strand': [-.1163, 51.5115], 'kcl-waterloo': [-.1126, 51.5050], 'kcl-guys': [-.0885, 51.5029],
   'imperial-south-ken': [-.1749, 51.4988], 'imperial-white-city': [-.2363, 51.5162],
   'lse-aldwych': [-.1160, 51.5144],
 };

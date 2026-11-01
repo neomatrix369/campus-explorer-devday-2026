@@ -5,19 +5,36 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ALL_BUILDINGS, UNIVERSITIES } from '../data/campusData.ts';
+import { ALL_BUILDINGS, CAMPUS_CENTERS, UNIVERSITIES } from '../data/campusData.ts';
 import { estimatedOccupancy, formatHour, isOpenAt, parseStudyQuery, rankStudySpaces, recommendStudySpot } from './campusLogic.ts';
 import { campusGeoJson, campusPdf, parseBlueprint, synthesizeBlueprint } from './mapExports.ts';
+import { londonCampusBuildings } from './londonLandmarks.ts';
 
 /** Scenario: The first-run map covers London. Slice: multi-university exploration.
- * Given the bundled campus profiles, when they are counted, then all four universities and seven campuses have 27 selectable buildings. */
-test('bundled campuses provide four universities, seven campuses and 27 buildings', () => {
+ * Given the bundled campus profiles, when they are counted, then all four universities and eight campuses have 27 selectable buildings. */
+test('bundled campuses provide four universities, eight campuses and 27 buildings', () => {
   // -- Given --
   const campuses = UNIVERSITIES.flatMap(university => university.campuses);
   // -- When --
   const counts = [UNIVERSITIES.length, campuses.length, ALL_BUILDINGS.length];
   // -- Then --
-  assert.deepEqual(counts, [4, 7, 27]);
+  assert.deepEqual(counts, [4, 8, 27]);
+});
+
+/** Scenario: London retains the local building layout at each campus anchor. Slice: city-scale 3D exploration.
+ * Given eight campus anchors, when their schematic buildings are projected, then every building stays near its own campus. */
+test('London building overlays remain near their campus anchors', () => {
+  // -- Given --
+  const anchors = Object.fromEntries(UNIVERSITIES.flatMap(university => university.campuses.map(campus => [campus.id, campus.buildings.length])));
+  // -- When --
+  const features = londonCampusBuildings().features;
+  const counts = Object.fromEntries(Object.keys(anchors).map(id => [id, features.filter(feature => feature.properties.campusId === id).length]));
+  // -- Then --
+  assert.deepEqual(counts, anchors);
+  assert.ok(features.every(feature => feature.geometry.coordinates[0].every(([lon, lat]) => {
+    const [anchorLon, anchorLat] = CAMPUS_CENTERS[feature.properties.campusId];
+    return Math.abs(lon - anchorLon) < 0.002 && Math.abs(lat - anchorLat) < 0.002;
+  })));
 });
 
 /** Scenario: A time slider wraps across midnight. Slice: time preview.

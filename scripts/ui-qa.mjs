@@ -64,10 +64,15 @@ for (const width of [1280, 390]) {
   await page.getByRole('button', { name: 'London', exact: true }).click();
   await page.getByRole('dialog', { name: 'London overview' }).waitFor({ state: 'visible' });
   await page.locator('.london-map-frame[data-map-ready="true"]').waitFor({ timeout: 45000 });
-  assert.equal(await page.locator('.campus-map-marker').count(), 7, 'London map needs all seven campus markers');
+  assert.equal(await page.locator('.campus-map-marker').count(), 8, 'London map needs all eight campus markers');
   await page.screenshot({ path: path.join(out, `london-${width}.png`) });
   await page.getByRole('button', { name: 'Explore UCL, UCL East' }).click();
+  await page.getByText('Illustrative campus buildings appear at this map position.').waitFor({ state: 'visible' });
+  await page.waitForTimeout(1200);
+  await page.screenshot({ path: path.join(out, `london-close-${width}.png`) });
+  await page.locator('.campus-overview-list button').filter({ hasText: 'Marshgate' }).click();
   assert.equal(await page.locator('.app-shell').getAttribute('data-campus'), 'ucl-east');
+  await page.getByText('Marshgate', { exact: true }).first().waitFor({ state: 'visible' });
   await page.getByRole('button', { name: 'View', exact: true }).click();
   await page.getByRole('checkbox', { name: 'Trees', exact: true }).uncheck();
   await page.getByRole('checkbox', { name: 'Surrounding buildings', exact: true }).uncheck();
