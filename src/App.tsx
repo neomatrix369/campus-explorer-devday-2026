@@ -1,0 +1,204 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ArrowUpRight, Camera, ChevronDown, Clock3, Compass, Download, FileJson, FileText, Layers3, Map, Menu, Moon, Music2, Pause, Play, RotateCcw, SkipBack, SkipForward, Sparkles, Sun, Volume2, VolumeX, X } from 'lucide-react';
+import { ALL_BUILDINGS, UNIVERSITIES, findBuildingLocation, type CampusBuilding, type CampusProfile } from './data/campusData.ts';
+import { TOUR_STOPS } from './data/tour.ts';
+import { recommendStudySpot, formatHour, sunState, type Recommendation } from './utils/campusLogic.ts';
+import { campusGeoJson, campusPdf, downloadBlob, parseBlueprint, parseGeoJsonBuildings } from './utils/mapExports.ts';
+import { createSoundscape, type SoundMode } from './utils/soundscape.ts';
+import { startNarration } from './utils/narration.ts';
+import { CampusScene3D, type SceneHandle } from './components/CampusScene3D.tsx';
+import { BuildingInspector, LeftRail } from './components/StudyPanels.tsx';
+import { FloorExplorer } from './components/FloorExplorer.tsx';
+
+type ToolPanel = 'none' | 'exports' | 'map-lab' | 'photo';
+
+function currentHour(): number {
+  const now = new Date();
+  return now.getHours() + Math.round(now.getMinutes() / 15) * .25;
+}
+
+function saveDataUrl(url: string, filename: string): void {
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.click();
+}
+
+export default function App() {
+  const [campusId, setCampusId] = useState('ucl-bloomsbury');
+  const [customBuildings, setCustomBuildings] = useState<Record<string, CampusBuilding[]>>({});
+  const [hour, setHour] = useState(currentHour);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedFloor, setSelectedFloor] = useState<string | null>(null);
+  const [heatmap, setHeatmap] = useState(true);
+  const [flow, setFlow] = useState(false);
+  const [soundMode, setSoundMode] = useState<SoundMode>('off');
+  const [recommendation, setRecommendation] = useState<Recommendation | null>(null);
+  const [finding, setFinding] = useState(false);
+  const [floorOpen, setFloorOpen] = useState(false);
+  const [toolPanel, setToolPanel] = useState<ToolPanel>('none');
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [tourPlaying, setTourPlaying] = useState(false);
+  const [tourStarted, setTourStarted] = useState(false);
+  const [tourIndex, setTourIndex] = useState(0);
+  const [tourLoop, setTourLoop] = useState(false);
+  const [tourVoice, setTourVoice] = useState(true);
+  const [neuralAvailable, setNeuralAvailable] = useState(false);
+  const [photos, setPhotos] = useState<string[]>([]);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const [blueprint, setBlueprint] = useState(JSON.stringify({ name: 'New Study Annex', shortCode: 'NSA', position: [2, -36], dimensions: [15, 18, 12], floors: [{ level: '1', name: 'Quiet study', type: 'Quiet', seats: 48 }, { level: '2', name: 'Silent study', type: 'Silent', seats: 36 }] }, null, 2));
+  const [labMessage, setLabMessage] = useState('');
+  const sceneRef = useRef<SceneHandle>(null);
+  const soundRef = useRef<ReturnType<typeof createSoundscape> | null>(null);
+  const lastRequest = useRef(0);
+
+  const location = useMemo(() => UNIVERSITIES.flatMap(university => university.campuses.map(campus => ({ university, campus }))).find(item => item.campus.id === campusId)!, [campusId]);
+  const university = location.university;
+  const campus: CampusProfile = useMemo(() => ({ ...location.campus, buildings: [...location.campus.buildings, ...(customBuildings[campusId] ?? [])] }), [location, customBuildings, campusId]);
+  const selected = campus.buildings.find(building => building.id === selectedId) ?? null;
+  const phase = sunState(hour).phase;
+
+  useEffect(() => {
+    soundRef.current = createSoundscape();
+    void fetch('/api/health').then(response => response.json()).then(data => setNeuralAvailable(data.mode === 'model-enabled')).catch(() => setNeuralAvailable(false));
+    return () => soundRef.current?.dispose();
+  }, []);
+
+  useEffect(() => {
+    const handle = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') { setFloorOpen(false); setToolPanel('none'); setMobileOpen(false); }
+      if (event.key === ' ' && tourPlaying && !(event.target instanceof HTMLInputElement)) { event.preventDefault(); setTourPlaying(false); }
+      if (event.key === 'ArrowRight' && tourPlaying && !(event.target instanceof HTMLInputElement)) setTourIndex(index => (index + 1) % TOUR_STOPS.length);
+    };
+    window.addEventListener('keydown', handle);
+    return () => window.removeEventListener('keydown', handle);
+  }, [tourPlaying]);
+
+  const chooseCampus = useCallback((id: string) => {
+    setTourPlaying(false);
+    setTourStarted(false);
+    setCampusId(id);
+    setSelectedId(null);
+    setSelectedFloor(null);
+    setRecommendation(null);
+    soundRef.current?.cue(580);
+  }, []);
+
+  const selectBuilding = useCallback((id: string, floor?: string) => {
+    setSelectedId(id);
+    setSelectedFloor(floor ?? null);
+    sceneRef.current?.focus(id);
+    soundRef.current?.cue(670);
+    setMobileOpen(false);
+  }, []);
+
+  const ask = useCallback(async (query: string) => {
+    const trimmed = query.trim();
+    if (!trimmed) return;
+    const targetUniversity = /\blse\b|economics/i.test(trimmed) ? 'lse' : /\bkcl\b|king'?s/i.test(trimmed) ? 'kcl' : /imperial/i.test(trimmed) ? 'imperial' : /\bucl\b/i.test(trimmed) ? 'ucl' : null;
+    const targetCampus = targetUniversity ? UNIVERSITIES.find(item => item.id === targetUniversity)!.campuses[0] : campus;
+    if (targetCampus.id !== campusId) setCampusId(targetCampus.id);
+    const local = recommendStudySpot(trimmed, targetCampus.buildings, hour);
+    setRecommendation(local);
+    if (local.match) { setSelectedId(local.match.building.id); setSelectedFloor(local.match.floor.level); }
+    const requestId = ++lastRequest.current;
+    setFinding(true);
+    try {
+      const response = await fetch('/api/ai/concierge', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: trimmed, campusId: targetCampus.id, hour }) });
+      if (!response.ok) throw new Error('The recommendation service is unavailable.');
+      const result = await response.json() as Recommendation;
+      if (requestId !== lastRequest.current) return;
+      const match = result.match && targetCampus.buildings.some(building => building.id === result.match?.building.id) ? result.match : local.match;
+      setRecommendation({ ...result, match });
+      if (match) { setSelectedId(match.building.id); setSelectedFloor(match.floor.level); setTimeout(() => sceneRef.current?.focus(match.building.id), 180); }
+    } catch { if (requestId === lastRequest.current) setRecommendation(local); }
+    finally { if (requestId === lastRequest.current) setFinding(false); }
+  }, [campus, campusId, hour]);
+
+  useEffect(() => {
+    if (!tourPlaying) return;
+    const stop = TOUR_STOPS[tourIndex];
+    const where = findBuildingLocation(stop.buildingId);
+    if (!where) return;
+    setCampusId(stop.campusId);
+    setSelectedId(stop.buildingId);
+    setSelectedFloor(stop.floor);
+    setHour(stop.hour);
+    soundRef.current?.cue(520 + tourIndex * 40);
+    const focusTimer = window.setTimeout(() => sceneRef.current?.focus(stop.buildingId), 350);
+    let nextTimer: number | undefined;
+    const advance = () => { nextTimer = window.setTimeout(() => {
+      if (tourIndex === TOUR_STOPS.length - 1 && !tourLoop) { setTourPlaying(false); return; }
+      setTourIndex(index => (index + 1) % TOUR_STOPS.length);
+    }, 1100); };
+    const cancelNarration = tourVoice ? startNarration(stop.narration, neuralAvailable, advance) : () => undefined;
+    if (!tourVoice) nextTimer = window.setTimeout(advance, 5500);
+    return () => { clearTimeout(focusTimer); if (nextTimer) clearTimeout(nextTimer); cancelNarration(); };
+  }, [tourPlaying, tourIndex, tourLoop, tourVoice, neuralAvailable]);
+
+  const startTour = (loop: boolean) => { setToolPanel('none'); setFloorOpen(false); setTourIndex(0); setTourLoop(loop); setTourStarted(true); setTourPlaying(true); };
+  const toggleSound = () => { const next = soundMode === 'off' ? 'lofi' : soundMode === 'lofi' ? 'rain' : 'off'; setSoundMode(next); soundRef.current?.setMode(next); };
+  const exportPdf = () => downloadBlob(campusPdf(university, campus, hour) as BlobPart, 'application/pdf', `${campus.id}-schematic-map.pdf`);
+  const exportGeo = () => downloadBlob(JSON.stringify(campusGeoJson(campus), null, 2), 'application/geo+json', `${campus.id}-schematic.geojson`);
+  const capture = () => { const image = sceneRef.current?.capture(); if (image) setPhotos(current => [image, ...current].slice(0, 12)); };
+  const captureBurst = async () => {
+    if (photoBusy) return;
+    setPhotoBusy(true);
+    const original = hour;
+    const shots: string[] = [];
+    for (const time of [13.5, 18.25, 22]) {
+      setHour(time);
+      await new Promise(resolve => setTimeout(resolve, 450));
+      const image = sceneRef.current?.capture();
+      if (image) shots.push(image);
+    }
+    setHour(original);
+    setPhotos(current => [...shots, ...current].slice(0, 12));
+    setPhotoBusy(false);
+  };
+  const addBlueprint = () => {
+    try {
+      const next = parseBlueprint(blueprint, campus.buildings.length);
+      setCustomBuildings(current => ({ ...current, [campusId]: [...(current[campusId] ?? []), next] }));
+      setLabMessage(`${next.name} added to ${campus.name} as a schematic building.`);
+      setSelectedId(next.id);
+    } catch (error) { setLabMessage((error as Error).message); }
+  };
+  const importGeoJson = async (file: File | undefined) => {
+    if (!file) return;
+    try {
+      if (file.size > 2_000_000) throw new Error('Choose a GeoJSON file smaller than 2 MB.');
+      const imported = parseGeoJsonBuildings(await file.text(), campus.buildings.length);
+      setCustomBuildings(current => ({ ...current, [campusId]: [...(current[campusId] ?? []), ...imported] }));
+      setLabMessage(`${imported.length} polygon footprint${imported.length === 1 ? '' : 's'} added as schematic 3D buildings.`);
+    } catch (error) { setLabMessage((error as Error).message); }
+  };
+
+  return <main className="app-shell" data-campus={campusId} data-phase={phase}>
+    <header className="topbar">
+      <div className="brand"><span className="brand-mark"><Compass size={23} strokeWidth={2.5} /></span><span><strong>CampusExplorer</strong><small>Find a quiet seat before you walk there</small></span></div>
+      <nav className="university-tabs" aria-label="University">{UNIVERSITIES.map(item => <button key={item.id} className={university.id === item.id ? 'active' : ''} onClick={() => chooseCampus(item.campuses[0].id)} aria-pressed={university.id === item.id}>{item.shortName}</button>)}</nav>
+      <div className="header-actions"><div className="campus-select-wrap"><label className="sr-only" htmlFor="campus-select">Campus</label><select id="campus-select" value={campusId} onChange={event => chooseCampus(event.target.value)}>{university.campuses.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select><ChevronDown size={15} /></div><span className="simulation-chip">Simulated + official map links</span><label className="time-control"><Clock3 size={17} /><span>Time</span><input type="range" min="0" max="23.75" step="0.25" value={hour} onChange={event => setHour(Number(event.target.value))} aria-label="Preview hour" /><strong>{formatHour(hour)}</strong></label><button className="icon-button theme-button" onClick={() => setHour(phase === 'night' ? 13 : 22)} aria-label={phase === 'night' ? 'Show daytime' : 'Show nighttime'}>{phase === 'night' ? <Sun size={18} /> : <Moon size={18} />}</button><button className="icon-button mobile-menu" onClick={() => setMobileOpen(true)} aria-label="Open study finder"><Menu size={21} /></button></div>
+    </header>
+
+    <CampusScene3D ref={sceneRef} campus={campus} hour={hour} selectedId={selectedId} selectedFloor={selectedFloor} heatmap={heatmap} flow={flow} onSelect={selectBuilding} />
+    <div className="map-attribution">Schematic 3D campus · not a surveyed map <a href={campus.sourceUrl} target="_blank" rel="noreferrer">Official map <ArrowUpRight size={12} /></a></div>
+    <LeftRail campus={campus} hour={hour} recommendation={recommendation} loading={finding} onAsk={ask} onSelect={selectBuilding} mobileOpen={mobileOpen} onClose={() => setMobileOpen(false)} />
+    {selected && <BuildingInspector campus={campus} building={selected} hour={hour} selectedFloor={selectedFloor} onFloor={setSelectedFloor} onExpand={() => setFloorOpen(true)} onClose={() => { setSelectedId(null); setSelectedFloor(null); sceneRef.current?.reset(); }} />}
+
+    <div className="map-title"><span className="eyebrow">Explore in 3D</span><strong>{university.shortName} · {campus.name}</strong><span>{campus.location}</span></div>
+    <div className="view-controls"><button onClick={() => sceneRef.current?.reset()}><RotateCcw size={16} /> Overview</button><span>Drag to rotate · Scroll to zoom</span></div>
+
+    {tourStarted && <div className="tour-banner" role="status"><span className="tour-progress">{tourIndex + 1}/{TOUR_STOPS.length}</span><div><small>{tourPlaying ? 'Guided tour' : 'Tour paused'}</small><strong>{TOUR_STOPS[tourIndex].title}</strong></div><button onClick={() => setTourIndex(index => (index - 1 + TOUR_STOPS.length) % TOUR_STOPS.length)} aria-label="Previous tour stop"><SkipBack size={17} /></button><button onClick={() => setTourPlaying(value => !value)} aria-label={tourPlaying ? 'Pause tour' : 'Resume tour'}>{tourPlaying ? <Pause size={17} /> : <Play size={17} />}</button><button onClick={() => setTourIndex(index => (index + 1) % TOUR_STOPS.length)} aria-label="Next tour stop"><SkipForward size={17} /></button><button onClick={() => { setTourIndex(0); setTourPlaying(true); }} aria-label="Replay tour"><RotateCcw size={16} /></button><button onClick={() => setTourVoice(value => !value)} aria-label={tourVoice ? 'Mute tour voice' : 'Enable tour voice'}>{tourVoice ? <Volume2 size={16} /> : <VolumeX size={16} />}</button><button onClick={() => { setTourPlaying(false); setTourStarted(false); }} aria-label="Exit tour"><X size={16} /></button></div>}
+
+    <div className="bottom-dock" aria-label="Map controls"><button className={heatmap ? 'active' : ''} onClick={() => setHeatmap(value => !value)} aria-pressed={heatmap}><Layers3 size={17} /> Heatmap</button><button className={flow ? 'active' : ''} onClick={() => setFlow(value => !value)} aria-pressed={flow}><Sparkles size={17} /> Flow</button><span className="dock-divider" /><button onClick={() => tourStarted ? setTourPlaying(value => !value) : startTour(true)}>{tourPlaying ? <Pause size={17} /> : <Play size={17} />} {tourPlaying ? 'Pause tour' : tourStarted ? 'Resume tour' : 'Guided tour'}</button><button className={soundMode !== 'off' ? 'active' : ''} onClick={toggleSound} aria-label={`Sound: ${soundMode}. Change soundscape`}>{soundMode === 'off' ? <VolumeX size={17} /> : <Music2 size={17} />} {soundMode === 'off' ? 'Sound off' : soundMode === 'lofi' ? 'Lo-fi' : 'Rain'}</button><span className="dock-divider" /><button onClick={() => setToolPanel(toolPanel === 'photo' ? 'none' : 'photo')}><Camera size={17} /> Photos</button><button onClick={() => setToolPanel(toolPanel === 'exports' ? 'none' : 'exports')}><Download size={17} /> Export</button><button onClick={() => setToolPanel(toolPanel === 'map-lab' ? 'none' : 'map-lab')}><Map size={17} /> Map lab</button></div>
+
+    {toolPanel !== 'none' && <div className="tool-drawer panel" role="dialog" aria-label={toolPanel === 'photo' ? 'Photo studio' : toolPanel === 'exports' ? 'Map exports' : 'Map lab'}><div className="tool-heading"><strong>{toolPanel === 'photo' ? 'Photo studio' : toolPanel === 'exports' ? 'Take this map with you' : 'Map lab'}</strong><button className="icon-button" onClick={() => setToolPanel('none')} aria-label="Close tools"><X size={18} /></button></div>
+      {toolPanel === 'exports' && <div className="tool-content"><p>Download the current schematic and open the official university map to check details.</p><button className="tool-action" onClick={exportPdf}><FileText size={20} /><span><strong>Vector PDF</strong><small>Buildings, floor counts and estimated occupancy</small></span><Download size={16} /></button><button className="tool-action" onClick={exportGeo}><FileJson size={20} /><span><strong>GeoJSON</strong><small>Approximate building footprints</small></span><Download size={16} /></button><a className="tool-action" href={campus.sourceUrl} target="_blank" rel="noreferrer"><Map size={20} /><span><strong>Official campus map</strong><small>{university.name}</small></span><ArrowUpRight size={16} /></a></div>}
+      {toolPanel === 'photo' && <div className="tool-content"><p>Capture the current view or a three-time lighting sequence.</p><div className="tool-buttons"><button className="primary-button" onClick={capture}><Camera size={16} /> Capture view</button><button className="secondary-button" onClick={captureBurst} disabled={photoBusy}>{photoBusy ? 'Capturing…' : 'Day · dusk · night'}</button></div><div className="photo-grid">{photos.map((photo, index) => <button key={`${index}-${photo.slice(-10)}`} onClick={() => saveDataUrl(photo, `campus-explorer-${campus.id}-${index + 1}.png`)} aria-label={`Download photo ${index + 1}`}><img src={photo} alt={`Captured 3D campus view ${index + 1}`} /><span>Download photo {index + 1}</span></button>)}</div>{photos.length === 0 && <p className="empty-state">No photos yet. Capture a view to add it here.</p>}</div>}
+      {toolPanel === 'map-lab' && <div className="tool-content"><p>Upload GeoJSON building polygons or paste a small building description. Imported geometry stays in this browser session.</p><label className="field-label" htmlFor="geojson-file">GeoJSON map file</label><input id="geojson-file" className="file-input" type="file" accept=".geojson,.json,application/geo+json" onChange={event => void importGeoJson(event.target.files?.[0])} /><label className="field-label" htmlFor="blueprint-json">Building JSON</label><textarea id="blueprint-json" value={blueprint} onChange={event => setBlueprint(event.target.value)} spellCheck={false} /><button className="primary-button" onClick={addBlueprint}>Add to 3D campus</button>{labMessage && <p className="lab-message" role="status">{labMessage}</p>}</div>}
+    </div>}
+
+    {floorOpen && selected && <FloorExplorer building={selected} campus={campus} selectedFloor={selectedFloor ?? selected.floors[0].level} hour={hour} onFloor={setSelectedFloor} onClose={() => setFloorOpen(false)} />}
+  </main>;
+}
