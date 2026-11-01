@@ -2,6 +2,8 @@
 
 Find a quiet study space on a navigable, schematic 3D map of UCL, King's, Imperial and LSE.
 
+[Watch the 70.9-second demo](https://github.com/neomatrix369/campus-explorer-devday-2026/releases/download/v0.1.0/CampusExplorer-DevDay-demo.mp4) · [View the release](https://github.com/neomatrix369/campus-explorer-devday-2026/releases/tag/v0.1.0)
+
 ## What it does
 
 Switch between seven London campuses, preview a time of day, compare estimated study floors, inspect a building, and ask for a recommendation. A guided tour, optional soundscape, photo capture and contact sheet, PDF and GeoJSON exports, and a local map lab support exploration. The light interface was informed by user-supplied FindUCL screenshots; see [credits](docs/CREDITS.md).
