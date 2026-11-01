@@ -18,7 +18,7 @@ The local path is the baseline. `POST /api/ai/concierge` accepts a query, campus
 
 ## What the map means
 
-The bundled buildings are simplified boxes and landmark shapes placed in a stylized campus grid. They are **not** surveyed footprints or a navigable walking route. GeoJSON imports extrude uploaded polygons. Original GeoJSON rings (including holes) and properties are retained separately from the display transform, and exported without relocation. Imported geometry without study data is excluded from ranking. A written description generates three illustrative floors; neither path verifies floor uses, heights or opening hours. The PDF and GeoJSON exports are labelled schematic for the same reason.
+The London overview uses an OpenStreetMap-based vector street map from OpenFreeMap, with approximate markers for seven campuses. At close zoom the map style shows city building extrusions. Selecting a marker opens the separate schematic 3D campus scene. Its bundled buildings are simplified boxes and landmark shapes placed in a stylized campus grid. They are **not** surveyed footprints or a navigable walking route. GeoJSON imports extrude uploaded polygons. Original GeoJSON rings (including holes) and properties are retained separately from the display transform, and exported without relocation. Imported geometry without study data is excluded from ranking. A written description generates three illustrative floors; neither path verifies floor uses, heights or opening hours. The PDF and GeoJSON exports are labelled schematic for the same reason.
 
 The time slider applies a deterministic daily curve to each floor's authored baseline. Free seats are the estimated occupancy percentage applied to the floor capacity. Noise is adjusted from occupancy and study type. No university occupancy feed, microphone reading or student report is connected. Check each university map and booking page before travelling.
 
@@ -35,7 +35,7 @@ The university links in the interface are verified official pages, used for name
 
 The scene supports rotate, zoom, building selection and reset. Heatmap colours show occupancy bands, and flow points show an illustrative animation. The time slider controls day, dusk and night lighting. Tour narration, generated sound and optional AI calls start only after user actions. The guided tour has pause, resume, previous, next, replay, voice toggle and exit. Escape closes the floor explorer and tool drawer. The floor dialog traps keyboard focus and restores it on close. H hides or shows panels. Camera transitions and decorative movement respect reduced motion. Sound off also stops confirmation cues.
 
-For a reliable demo, no external map tile service, Google Maps key, database or AI key is required. Imported buildings and captured photos remain in the current browser session; reloading clears them. Photo studio can download individual captures or combine them into a contact sheet.
+The London street map loads vector tiles from OpenFreeMap and needs internet access; the campus list and schematic 3D campus scenes work without tiles. No Google Maps key, database or AI key is required. Imported buildings and captured photos remain in the current browser session; reloading clears them. Photo studio can download individual captures or combine them into a contact sheet.
 
 ## Shared owners and remaining limits
 
@@ -44,4 +44,4 @@ For a reliable demo, no external map tile service, Google Maps key, database or 
 - `floorLayout.ts`: illustrative furnishings shared by the rotatable Three.js cutaway and SVG plan. These are not architectural interior surveys.
 - `data/audio.ts`: audio asset paths and sound prompts; `public/audio/manifest.json` records generation provenance. Playback does not expose the ElevenLabs key.
 
-Compared with the original broad briefs and the app on localhost:3000, this submission still has a schematic 2D London overview rather than a unified geographic 3D city; no satellite tiles, terrain/tide simulation, microphone assistant, PDF/image/CAD ingestion, live occupancy or real reservations. Its UI never claims those unavailable capabilities. The light theme follows the supplied FindUCL references.
+Compared with the original broad briefs and the app on localhost:3000, this submission has a geographic London overview with vector building extrusions at close zoom, linked to separate schematic campus scenes. It has no unified surveyed 3D university model, satellite tiles, terrain/tide simulation, microphone assistant, PDF/image/CAD ingestion, live occupancy or real reservations. Its UI never claims those unavailable capabilities. The light theme follows the supplied FindUCL references.

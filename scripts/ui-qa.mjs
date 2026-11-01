@@ -63,8 +63,10 @@ for (const width of [1280, 390]) {
   await page.getByRole('button', { name: 'Close building details' }).click();
   await page.getByRole('button', { name: 'London', exact: true }).click();
   await page.getByRole('dialog', { name: 'London overview' }).waitFor({ state: 'visible' });
+  await page.locator('.london-map-frame[data-map-ready="true"]').waitFor({ timeout: 45000 });
+  assert.equal(await page.locator('.campus-map-marker').count(), 7, 'London map needs all seven campus markers');
   await page.screenshot({ path: path.join(out, `london-${width}.png`) });
-  await page.locator('.campus-overview-list button').filter({ hasText: 'UCL East' }).click();
+  await page.getByRole('button', { name: 'Explore UCL, UCL East' }).click();
   assert.equal(await page.locator('.app-shell').getAttribute('data-campus'), 'ucl-east');
   await page.getByRole('button', { name: 'View', exact: true }).click();
   await page.getByRole('checkbox', { name: 'Trees', exact: true }).uncheck();
