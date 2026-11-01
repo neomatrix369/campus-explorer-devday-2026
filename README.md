@@ -2,6 +2,8 @@
 
 Find a quiet study space on a navigable, schematic 3D map of UCL, King's, Imperial and LSE.
 
+[Watch the 70.9-second demo](https://github.com/neomatrix369/campus-explorer-devday-2026/releases/download/v0.1.0/CampusExplorer-DevDay-demo.mp4) · [View the release](https://github.com/neomatrix369/campus-explorer-devday-2026/releases/tag/v0.1.0)
+
 ## What it does
 
 Switch between seven London campuses, preview a time of day, compare estimated study floors, inspect a building, and ask for a recommendation. A guided tour, optional soundscape, photo capture and contact sheet, PDF and GeoJSON exports, and a local map lab support exploration. The light interface follows the [supplied FindUCL reference](design/mockup.png).
@@ -28,6 +30,19 @@ npm run build
 ## Use it
 
 **Core journey:** choose UCL Bloomsbury, ask for “quiet seat with charging and water”, inspect the suggested floor in 3D, then open the official campus map to verify details before travelling. Drag to rotate, scroll to zoom, or move the time slider to compare estimates. The Map lab also accepts GeoJSON polygons, building JSON, or a written description for an illustrative three-floor building. Imports stay in browser memory for the session.
+
+### Woolly: desktop to 3D and back
+
+On macOS 12 or newer, start the web app, then run the desktop pet in a second terminal:
+
+```bash
+cd native-pet
+swift run
+```
+
+The sheep downloads its animation from the credited upstream catalog on first launch. Right-click the sheep or use its menu-bar paw icon and choose **Lead CampusExplorer tour**. It leaves the desktop, appears beside the selected building in the 3D scene, and leads the six-stop tour. Choose **Exit tour** to bring it back. The menu-bar **Return to desktop** item also restores it. If the web app runs on another port, use `CAMPUS_URL=http://127.0.0.1:3001 swift run`, replacing 3001 with that port. In a browser without the native app, **🐑 Follow Woolly** runs the same tour.
+
+This build uses a local loopback bridge between the two apps. It does not claim direct OpenAI Dot or Pet account integration; no supported API for Dot activity subscriptions or pet embedding was confirmed for this build.
 
 ## Learn more
 
