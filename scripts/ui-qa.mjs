@@ -65,6 +65,7 @@ for (const width of [1280, 390]) {
   await page.getByRole('dialog', { name: 'London overview' }).waitFor({ state: 'visible' });
   await page.locator('.london-map-frame[data-map-ready="true"]').waitFor({ timeout: 45000 });
   assert.equal(await page.locator('.campus-map-marker').count(), 8, 'London map needs all eight campus markers');
+  assert.match(await page.locator('.london-map-copy').innerText(), /Enlarged 3D miniatures/);
   await page.screenshot({ path: path.join(out, `london-${width}.png`) });
   await page.getByRole('button', { name: 'Explore UCL, UCL East' }).click();
   await page.getByText('Illustrative campus buildings appear at this map position.').waitFor({ state: 'visible' });

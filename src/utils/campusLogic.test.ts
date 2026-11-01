@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import { ALL_BUILDINGS, CAMPUS_CENTERS, UNIVERSITIES } from '../data/campusData.ts';
 import { estimatedOccupancy, formatHour, isOpenAt, parseStudyQuery, rankStudySpaces, recommendStudySpot } from './campusLogic.ts';
 import { campusGeoJson, campusPdf, parseBlueprint, synthesizeBlueprint } from './mapExports.ts';
-import { londonCampusBuildings } from './londonLandmarks.ts';
+import { londonCampusBuildings, londonCampusOverviewBuildings } from './londonLandmarks.ts';
 
 /** Scenario: The first-run map covers London. Slice: multi-university exploration.
  * Given the bundled campus profiles, when they are counted, then all four universities and eight campuses have 27 selectable buildings. */
@@ -35,6 +35,36 @@ test('London building overlays remain near their campus anchors', () => {
     const [anchorLon, anchorLat] = CAMPUS_CENTERS[feature.properties.campusId];
     return Math.abs(lon - anchorLon) < 0.002 && Math.abs(lat - anchorLat) < 0.002;
   })));
+});
+
+/** Scenario: A citywide map shows recognizable building clusters. Slice: London 3D overview.
+ * Given a physically scaled campus model, when the overview is built, then the same buildings are enlarged around their geographic anchors. */
+test('citywide 3D miniatures enlarge the same campus buildings around each anchor', () => {
+  // -- Given --
+  const local = londonCampusBuildings().features;
+  const city = londonCampusOverviewBuildings().features;
+  const [anchorLon] = CAMPUS_CENTERS[local[0].properties.campusId];
+  // -- When --
+  const localOffset = local[0].geometry.coordinates[0][0][0] - anchorLon;
+  const cityOffset = city[0].geometry.coordinates[0][0][0] - anchorLon;
+  // -- Then --
+  assert.deepEqual(city.map(feature => feature.properties.buildingId), local.map(feature => feature.properties.buildingId));
+  assert.ok(Math.abs(cityOffset / localOffset - 12) < 0.001);
+  assert.equal(city[0].properties.height, local[0].properties.height * 18);
+});
+
+/** Scenario: A narrow London map still reveals its campus models. Slice: mobile city overview.
+ * Given the same campus, when map width shrinks, then its miniature grows relative to the available viewport. */
+test('citywide miniatures adapt their visible scale to a narrow map', () => {
+  // -- Given --
+  const [anchorLon] = CAMPUS_CENTERS['ucl-bloomsbury'];
+  // -- When --
+  const desktop = londonCampusOverviewBuildings(1200).features[0];
+  const mobile = londonCampusOverviewBuildings(340).features[0];
+  const desktopOffset = Math.abs(desktop.geometry.coordinates[0][0][0] - anchorLon);
+  const mobileOffset = Math.abs(mobile.geometry.coordinates[0][0][0] - anchorLon);
+  // -- Then --
+  assert.ok(mobileOffset > desktopOffset * 2 && mobile.properties.height > desktop.properties.height * 2);
 });
 
 /** Scenario: A time slider wraps across midnight. Slice: time preview.

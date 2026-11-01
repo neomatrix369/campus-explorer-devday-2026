@@ -20,7 +20,12 @@ function createWoollyMarker(campusId: string, onSelect: (id: string) => void): M
   button.dataset.campusId = campusId;
   button.addEventListener('click', () => onSelect(button.dataset.campusId ?? campusId));
   button.innerHTML = '<svg viewBox="0 0 48 48" aria-hidden="true"><ellipse cx="27" cy="27" rx="17" ry="15" fill="#fff1a0" stroke="#24172a" stroke-width="2"/><ellipse cx="17" cy="27" rx="9" ry="10" fill="#ffb783" stroke="#24172a" stroke-width="2"/><circle cx="17" cy="22" r="3" fill="white"/><circle cx="17" cy="22" r="1.5" fill="#24172a"/><circle cx="15" cy="13" r="6" fill="#800080" stroke="#24172a" stroke-width="2"/><circle cx="16" cy="13" r="2" fill="#cb39cb"/><path d="M20 41v4m15-4v4" stroke="#ed8958" stroke-width="4" stroke-linecap="round"/></svg>';
-  return new Marker({ element: button, anchor: 'center' });
+  return new Marker({ element: button, anchor: 'center', offset: [35, -35] });
+}
+
+function campusMarkerOffset(campusId: string, overview: boolean): [number, number] {
+  const base: [number, number] = campusId === 'kcl-strand' ? [-12, 22] : campusId === 'lse-aldwych' ? [14, -11] : [0, 0];
+  return [base[0], base[1] - (overview ? 55 : 0)];
 }
 
 function createCampusMarker(campus: typeof campuses[number], index: number, selectedCampus: string, onSelect: (id: string) => void): Marker {
@@ -32,23 +37,31 @@ function createCampusMarker(campus: typeof campuses[number], index: number, sele
   button.title = `${campus.university} · ${campus.name}`;
   button.setAttribute('aria-label', `Explore ${campus.university}, ${campus.name}`);
   button.addEventListener('click', () => onSelect(campus.id));
-  const offset: [number, number] = campus.id === 'kcl-strand' ? [-12, 22] : campus.id === 'lse-aldwych' ? [14, -11] : [0, 0];
-  return new Marker({ element: button, anchor: 'bottom', offset }).setLngLat(CAMPUS_CENTERS[campus.id]);
+  return new Marker({ element: button, anchor: 'bottom', offset: campusMarkerOffset(campus.id, true) }).setLngLat(CAMPUS_CENTERS[campus.id]);
 }
 
 function createCampusMap(element: HTMLDivElement, selectedCampus: string, onFocus: (id: string) => void, onBuildingSelect: (campusId: string, buildingId: string) => void, onReady: () => void, onError: () => void): MapLibreMap {
   const map = new MapLibreMap({ container: element, style: styleUrl, center: [-0.13, 51.52], zoom: 10, pitch: 55, bearing: -18 });
   map.on('load', () => {
     if (map.getLayer('building-3d')) map.setPaintProperty('building-3d', 'fill-extrusion-opacity', 0.35);
-    addLondonCampusLandmarks(map, onBuildingSelect);
+    addLondonCampusLandmarks(map, onBuildingSelect, onFocus);
   });
   map.addControl(new NavigationControl({ showCompass: true }), 'top-right');
   const bounds = new LngLatBounds();
-  campuses.forEach((campus, index) => {
-    createCampusMarker(campus, index, selectedCampus, onFocus).addTo(map);
+  const markers = campuses.map((campus, index) => {
+    const marker = createCampusMarker(campus, index, selectedCampus, onFocus).addTo(map);
     bounds.extend(CAMPUS_CENTERS[campus.id]);
+    return { campus, marker };
   });
+  const positionMarkers = (): void => {
+    const overview = map.getZoom() < 14;
+    markers.forEach(({ campus, marker }) => {
+      marker.setOffset(campusMarkerOffset(campus.id, overview));
+    });
+  };
+  map.on('zoom', positionMarkers);
   map.fitBounds(bounds, { padding: 70, maxZoom: 12, duration: 0 });
+  positionMarkers();
   map.once('load', onReady);
   map.on('error', onError);
   return map;
@@ -125,7 +138,7 @@ export function LondonOverview({ selectedCampus, onSelect, onBuildingSelect }: {
     setFocusedCampus(null);
   };
   return <div className="london-overview">
-    <div className="london-map-copy"><strong>3D London · {campuses.length} campuses</strong><span>{focusedCampus ? 'Illustrative campus buildings appear at this map position. Click a colored building to open its study details.' : 'Choose a campus marker to zoom into its buildings. Their shapes are illustrative; the city map uses OpenStreetMap data.'}</span><button className="secondary-button" onClick={showAllCampuses}>All campuses</button><button className="secondary-button" onClick={flying ? stopFlight : startFlight}>{flying ? 'Stop Woolly' : '🐑 Fly with Woolly'}</button></div>
+    <div className="london-map-copy"><strong>3D London · {campuses.length} campuses</strong><span>{focusedCampus ? 'Illustrative campus buildings appear at this map position. Click a colored building to open its study details.' : 'Enlarged 3D miniatures show all 27 bundled buildings across London. Select one to zoom in; sizes are illustrative.'}</span><button className="secondary-button" onClick={showAllCampuses}>All campuses</button><button className="secondary-button" onClick={flying ? stopFlight : startFlight}>{flying ? 'Stop Woolly' : '🐑 Fly with Woolly'}</button></div>
     <div className="london-map-frame" data-map-ready={mapReady}><div ref={host} className="london-map" role="img" aria-label={`Street map of London with ${campuses.length} university campus markers`} />{!mapReady && !mapFailed && <div className="london-map-loading" role="status">Loading London streets…</div>}{mapFailed && <div className="london-map-fallback" role="status">Map data is unavailable. Choose a campus from the list below.</div>}</div>
     <p className="london-woolly-status" role="status">{cityMessage}</p>
     <div className="campus-overview-list">{focusedProfile ? focusedProfile.buildings.map(building => <button key={building.id} onClick={() => onBuildingSelect(focusedProfile.id, building.id)}><span><strong>{building.name}</strong><small>{building.category} · illustrative position</small></span><span>Open details →</span></button>) : campuses.map((campus, index) => <button key={campus.id} onClick={() => onSelect(campus.id)} aria-pressed={selectedCampus === campus.id}><span><strong>{index + 1}. {campus.university} · {campus.name}</strong><small>{campus.location}</small></span><span>Explore 3D →</span></button>)}</div>

@@ -348,5 +348,7 @@ h1, h2, h3 { font-family: var(--font-display); letter-spacing: -.03em; }
   .london-overview .campus-overview-list { grid-template-columns: 1fr; overflow-y: auto; }
   .london-overview .campus-overview-list button { padding: 7px 9px; }
   .campus-map-marker { width: 24px; height: 24px; padding: 0; font-size: 0; border-radius: 50%; }
+  .london-woolly-marker { width: 36px; height: 36px; }
+  .london-woolly-marker svg { width: 30px; height: 30px; }
   .campus-map-marker::after { content: attr(data-index); font-size: 11px; }
 }
