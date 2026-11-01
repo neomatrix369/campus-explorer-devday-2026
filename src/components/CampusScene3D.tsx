@@ -11,6 +11,7 @@ export interface SceneHandle {
 }
 
 export type PetPhase = 'desktop' | 'entering' | 'touring' | 'exiting';
+export type PetActivity = 'walk' | 'graze' | 'nap' | 'wave' | 'dance';
 
 interface SceneProps {
   campus: CampusProfile;
@@ -22,6 +23,7 @@ interface SceneProps {
   petGuide: boolean;
   petPhase: PetPhase;
   petMessage: string | null;
+  petActivity: PetActivity;
   onSelect: (id: string) => void;
 }
 
@@ -29,7 +31,7 @@ type SceneRuntime = {
   focus: (buildingId: string) => void;
   reset: () => void;
   capture: () => string | null;
-  update: (props: Pick<SceneProps, 'hour' | 'selectedId' | 'selectedFloor' | 'heatmap' | 'flow' | 'petGuide' | 'petPhase' | 'petMessage'>) => void;
+  update: (props: Pick<SceneProps, 'hour' | 'selectedId' | 'selectedFloor' | 'heatmap' | 'flow' | 'petGuide' | 'petPhase' | 'petMessage' | 'petActivity'>) => void;
   dispose: () => void;
 };
 
@@ -63,7 +65,9 @@ function sheepCurl(parent: THREE.Group, x: number): void {
   sheepPart(parent, '#cb39cb', [x - .07, 1.88, 1.27], [.12, .11, .06]);
 }
 
-function createGuideSheep(): { group: THREE.Group; feet: THREE.Mesh[] } {
+type GuideSheep = { group: THREE.Group; feet: THREE.Mesh[]; eyes: THREE.Mesh[]; eyelids: THREE.Mesh[] };
+
+function createGuideSheep(): GuideSheep {
   const group = new THREE.Group();
   sheepPart(group, '#1d1521', [0, 1.2, 0], [1.21, .86, .84]);
   sheepPart(group, '#fff1a0', [0, 1.29, 0], [1.14, .8, .79]);
@@ -75,14 +79,37 @@ function createGuideSheep(): { group: THREE.Group; feet: THREE.Mesh[] } {
   sheepPart(group, '#ff9a68', [0, 1.18, 1.2], [.47, .27, .28]);
   sheepPart(group, '#fff3b8', [0, 1.91, .73], [.59, .35, .36]);
   for (const x of [-.42, .42]) sheepCurl(group, x);
+  const eyes: THREE.Mesh[] = [];
+  const eyelids: THREE.Mesh[] = [];
   for (const x of [-.22, .22]) {
     sheepPart(group, '#1d1521', [x, 1.56, 1.19], [.17, .22, .08]);
-    sheepPart(group, '#fffaf0', [x, 1.57, 1.25], [.12, .16, .07]);
-    sheepPart(group, '#1d1521', [x + .025, 1.55, 1.31], [.055, .09, .04]);
+    eyes.push(sheepPart(group, '#fffaf0', [x, 1.57, 1.25], [.12, .16, .07]));
+    eyes.push(sheepPart(group, '#1d1521', [x + .025, 1.55, 1.31], [.055, .09, .04]));
+    const lid = sheepPart(group, '#1d1521', [x, 1.54, 1.33], [.13, .025, .025]);
+    lid.visible = false;
+    eyelids.push(lid);
   }
   const feet = [-.64, .64].flatMap(x => [-.38, .38].map(z => sheepPart(group, '#ed8958', [x, .37, z], [.17, .34, .16])));
   group.scale.setScalar(5);
-  return { group, feet };
+  return { group, feet, eyes, eyelids };
+}
+
+function animateGuideSheep(sheep: GuideSheep, activity: PetActivity, frame: number, reducedMotion: boolean): number {
+  const motion = reducedMotion ? 0 : 1;
+  const step = Math.sin(frame * .12);
+  sheep.group.rotation.set(activity === 'graze' ? .32 : 0, 0, activity === 'wave' ? .1 + step * .12 * motion : activity === 'dance' ? step * .17 * motion : 0);
+  sheep.group.scale.set(5, activity === 'nap' ? 3.65 : 5, 5);
+  const closed = activity === 'nap' || (!reducedMotion && frame % 180 < 5);
+  sheep.eyes.forEach(eye => { eye.visible = !closed; });
+  sheep.eyelids.forEach(lid => { lid.visible = closed; });
+  sheep.feet.forEach((foot, index) => {
+    foot.position.y = .37;
+    foot.rotation.x = activity === 'walk' ? step * (index % 2 ? -.35 : .35) * motion : 0;
+  });
+  if (activity === 'wave') { sheep.feet[3].position.y = .68; sheep.feet[3].rotation.x = -.9; }
+  if (activity === 'dance') return Math.abs(step) * .75 * motion;
+  if (activity === 'graze') return -.35 + Math.sin(frame * .08) * .08 * motion;
+  return activity === 'walk' ? Math.abs(step) * .18 * motion : 0;
 }
 
 function facadeTexture(color: string, glass: boolean): THREE.CanvasTexture {
@@ -318,7 +345,7 @@ function makeScene(container: HTMLDivElement, labels: HTMLDivElement, campus: Ca
   speechCloud.hidden = true;
   labels.appendChild(speechCloud);
 
-  let state: Pick<SceneProps, 'hour' | 'selectedId' | 'selectedFloor' | 'heatmap' | 'flow' | 'petGuide' | 'petPhase' | 'petMessage'> = { hour: 16, selectedId: null, selectedFloor: null, heatmap: false, flow: true, petGuide: false, petPhase: 'desktop', petMessage: null };
+  let state: Pick<SceneProps, 'hour' | 'selectedId' | 'selectedFloor' | 'heatmap' | 'flow' | 'petGuide' | 'petPhase' | 'petMessage' | 'petActivity'> = { hour: 16, selectedId: null, selectedFloor: null, heatmap: false, flow: true, petGuide: false, petPhase: 'desktop', petMessage: null, petActivity: 'walk' };
   let phaseStarted = performance.now();
   let desiredCamera: THREE.Vector3 | null = null;
   let desiredTarget: THREE.Vector3 | null = null;
@@ -416,13 +443,12 @@ function makeScene(container: HTMLDivElement, labels: HTMLDivElement, campus: Ca
           sheep.group.position.copy(state.petPhase === 'entering' ? portal.lerp(destination, eased) : destination.lerp(portal, eased));
           sheep.group.position.y += reducedMotion ? 0 : Math.sin(progress * Math.PI) * 3;
           sheep.group.scale.setScalar(5 * (state.petPhase === 'entering' ? .55 + .45 * eased : 1 - .55 * eased));
+          sheep.group.rotation.set(0, 0, 0);
         } else {
           if (sheep.group.position.lengthSq() === 0) sheep.group.position.copy(destination);
           sheep.group.position.lerp(destination, .09);
-          sheep.group.position.y = standingY + (reducedMotion ? 0 : Math.abs(Math.sin(frame * .12)) * .18);
-          sheep.group.scale.setScalar(5);
+          sheep.group.position.y = standingY + animateGuideSheep(sheep, state.petActivity, frame, reducedMotion);
         }
-        sheep.feet.forEach((foot, index) => { foot.rotation.x = reducedMotion ? 0 : Math.sin(frame * .12 + index * Math.PI) * .35; });
       }
     }
     speechCloud.hidden = !sheep.group.visible || !state.petMessage;
@@ -509,8 +535,8 @@ export const CampusScene3D = forwardRef<SceneHandle, SceneProps>(function Campus
   }, [props.campus]);
 
   useEffect(() => {
-    runtime.current?.update({ hour: props.hour, selectedId: props.selectedId, selectedFloor: props.selectedFloor, heatmap: props.heatmap, flow: props.flow, petGuide: props.petGuide, petPhase: props.petPhase, petMessage: props.petMessage });
-  }, [props.hour, props.selectedId, props.selectedFloor, props.heatmap, props.flow, props.petGuide, props.petPhase, props.petMessage, props.campus]);
+    runtime.current?.update({ hour: props.hour, selectedId: props.selectedId, selectedFloor: props.selectedFloor, heatmap: props.heatmap, flow: props.flow, petGuide: props.petGuide, petPhase: props.petPhase, petMessage: props.petMessage, petActivity: props.petActivity });
+  }, [props.hour, props.selectedId, props.selectedFloor, props.heatmap, props.flow, props.petGuide, props.petPhase, props.petMessage, props.petActivity, props.campus]);
 
   return <div className="scene-root" aria-label={`Interactive 3D map of ${props.campus.name}`}>
     <div className="scene-canvas" ref={container} />

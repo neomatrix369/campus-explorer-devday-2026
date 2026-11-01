@@ -6,7 +6,7 @@ import { recommendStudySpot, formatHour, sunState, type Recommendation } from '.
 import { campusGeoJson, campusPdf, downloadBlob, parseBlueprint, parseGeoJsonBuildings, synthesizeBlueprint } from './utils/mapExports.ts';
 import { createSoundscape, type SoundMode } from './utils/soundscape.ts';
 import { startNarration } from './utils/narration.ts';
-import { CampusScene3D, type PetPhase, type SceneHandle } from './components/CampusScene3D.tsx';
+import { CampusScene3D, type PetActivity, type PetPhase, type SceneHandle } from './components/CampusScene3D.tsx';
 import { BuildingInspector, LeftRail } from './components/StudyPanels.tsx';
 import { FloorExplorer } from './components/FloorExplorer.tsx';
 
@@ -72,6 +72,7 @@ export default function App() {
   const [petTour, setPetTour] = useState(false);
   const [petPhase, setPetPhase] = useState<PetPhase>('desktop');
   const [petMessage, setPetMessage] = useState<string | null>(null);
+  const [petActivity, setPetActivity] = useState<PetActivity | null>(null);
   const [tourIndex, setTourIndex] = useState(0);
   const [tourLoop, setTourLoop] = useState(false);
   const [tourVoice, setTourVoice] = useState(true);
@@ -87,10 +88,11 @@ export default function App() {
   const lastRequest = useRef(0);
   const petTimer = useRef<number | undefined>(undefined);
   const messageTimer = useRef<number | undefined>(undefined);
-  const showPetMessage = useCallback((message: string, duration = 5200): void => {
+  const showPetMessage = useCallback((message: string, duration = 5200, activity: PetActivity | null = null): void => {
     window.clearTimeout(messageTimer.current);
     setPetMessage(message);
-    messageTimer.current = window.setTimeout(() => setPetMessage(null), duration);
+    setPetActivity(activity);
+    messageTimer.current = window.setTimeout(() => { setPetMessage(null); setPetActivity(null); }, duration);
   }, []);
 
   const location = useMemo(() => UNIVERSITIES.flatMap(university => university.campuses.map(campus => ({ university, campus }))).find(item => item.campus.id === campusId)!, [campusId]);
@@ -196,7 +198,7 @@ export default function App() {
     setSelectedId(stop.buildingId);
     setSelectedFloor(stop.floor);
     setHour(stop.hour);
-    if (petTour) showPetMessage(stop.narration.split('. ')[0] + '.');
+    if (petTour) showPetMessage(stop.narration.split('. ')[0] + '.', 5200, 'wave');
     soundRef.current?.cue(520 + tourIndex * 40);
     const focusTimer = window.setTimeout(() => sceneRef.current?.focus(stop.buildingId), 350);
     let nextTimer: number | undefined;
@@ -257,13 +259,13 @@ export default function App() {
   const woollysPick = () => {
     pauseForWoolly();
     const line = 'I will sniff out a cosy study seat!';
-    showPetMessage(line);
+    showPetMessage(line, 5200, 'graze');
     speakWoollyLine(line);
     void ask('quiet seat with charging and water');
   };
   const surpriseStop = () => {
     setRecommendation(null);
-    showPetMessage('Plot twist! Let us explore somewhere new.');
+    showPetMessage('Plot twist! Let us explore somewhere new.', 3200, 'dance');
     setTourPlaying(true);
     setTourIndex(index => (index + 1 + Math.floor(Math.random() * (TOUR_STOPS.length - 1))) % TOUR_STOPS.length);
     soundRef.current?.cue(920);
@@ -272,7 +274,7 @@ export default function App() {
     setSoundMode('lofi');
     soundRef.current?.setMode('lofi');
     soundRef.current?.sing();
-    showPetMessage('La la baa!');
+    showPetMessage('La la baa!', 5200, 'dance');
   };
   const woollySays = (): void => {
     if (petPhase === 'exiting') return;
@@ -283,7 +285,7 @@ export default function App() {
     ];
     const line = lines[Math.floor(Math.random() * lines.length)];
     pauseForWoolly();
-    showPetMessage(line, 7000);
+    showPetMessage(line, 7000, 'wave');
     speakWoollyLine(line);
   };
   useEffect(() => {
@@ -349,7 +351,7 @@ export default function App() {
       <div className="header-actions"><div className="campus-select-wrap"><label className="sr-only" htmlFor="campus-select">Campus</label><select id="campus-select" value={campusId} onChange={event => chooseCampus(event.target.value)}>{university.campuses.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select><ChevronDown size={15} /></div><span className="simulation-chip">Simulated + official map links</span><label className="time-control"><Clock3 size={17} /><span>Time</span><input type="range" min="0" max="23.75" step="0.25" value={hour} onChange={event => setHour(Number(event.target.value))} aria-label="Preview hour" /><strong>{formatHour(hour)}</strong></label><button className="icon-button theme-button" onClick={() => setHour(phase === 'night' ? 13 : 22)} aria-label={phase === 'night' ? 'Show daytime' : 'Show nighttime'}>{phase === 'night' ? <Sun size={18} /> : <Moon size={18} />}</button><button className="icon-button mobile-menu" onClick={() => setMobileOpen(true)} aria-label="Open study finder"><Menu size={21} /></button></div>
     </header>
 
-    <CampusScene3D ref={sceneRef} campus={campus} hour={hour} selectedId={selectedId} selectedFloor={selectedFloor} heatmap={heatmap} flow={flow} petGuide={petTour && tourStarted} petPhase={petPhase} petMessage={petMessage} onSelect={selectBuilding} />
+    <CampusScene3D ref={sceneRef} campus={campus} hour={hour} selectedId={selectedId} selectedFloor={selectedFloor} heatmap={heatmap} flow={flow} petGuide={petTour && tourStarted} petPhase={petPhase} petMessage={petMessage} petActivity={petActivity ?? (petPhase === 'touring' && !tourPlaying ? 'nap' : 'walk')} onSelect={selectBuilding} />
     <div className="map-attribution">Schematic 3D campus · not a surveyed map <a href={campus.sourceUrl} target="_blank" rel="noreferrer">Official map <ArrowUpRight size={12} /></a></div>
     <LeftRail campus={campus} hour={hour} recommendation={recommendation} usageText={telemetry.queries ? `${telemetry.queries} ${telemetry.queries === 1 ? 'query' : 'queries'} · ${telemetry.modelTokens} model tokens · ${telemetry.unknownCost ? 'some model cost unpriced' : `$${telemetry.costUsd.toFixed(6)} estimated AI cost`} · ${telemetry.lastSource.replace('-', ' ')}` : ''} loading={finding} onAsk={ask} onSelect={selectBuilding} mobileOpen={mobileOpen} onClose={() => setMobileOpen(false)} />
     {selected && <BuildingInspector campus={campus} building={selected} hour={hour} selectedFloor={selectedFloor} onFloor={setSelectedFloor} onExpand={() => setFloorOpen(true)} onClose={() => { setSelectedId(null); setSelectedFloor(null); sceneRef.current?.reset(); }} />}
