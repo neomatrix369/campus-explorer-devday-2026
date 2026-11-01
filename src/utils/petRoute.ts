@@ -41,3 +41,14 @@ export function streetRoute(start: GroundPoint, end: GroundPoint): GroundPoint[]
   for (let node = 1; node !== -1; node = previous[node]) route.unshift(nodes[node]);
   return route;
 }
+
+/** A short, clear corridor from the nearest road-facing wall into the lobby. */
+export function buildingInteriorRoute(building: CampusBuilding, access: GroundPoint): GroundPoint[] {
+  const [x, z] = building.position;
+  const [width, , depth] = building.dimensions;
+  const alongX = Math.abs(access.x - x) - width / 2 > Math.abs(access.z - z) - depth / 2;
+  const side = alongX ? Math.sign(access.x - x) || 1 : Math.sign(access.z - z) || 1;
+  const half = alongX ? width / 2 : depth / 2;
+  const point = (distance: number): GroundPoint => alongX ? { x: x + side * distance, z } : { x, z: z + side * distance };
+  return [point(half + 2), point(half - 2), point(0)];
+}

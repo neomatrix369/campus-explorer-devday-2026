@@ -4,7 +4,8 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import type { CampusBuilding, CampusProfile } from '../data/campusData.ts';
 import { createBox } from '../utils/sceneGeometry.ts';
 import { buildingOccupancy, occupancyBand, sunState } from '../utils/campusLogic.ts';
-import { roadAccess, streetRoute, type GroundPoint } from '../utils/petRoute.ts';
+import { buildingInteriorRoute, roadAccess, streetRoute, type GroundPoint } from '../utils/petRoute.ts';
+import { floorLayout } from '../utils/floorLayout.ts';
 
 export type CameraView = 'aerial' | 'focus' | 'street';
 export type PetPhase = 'desktop' | 'entering' | 'touring' | 'exiting';
@@ -144,7 +145,7 @@ function facadeTexture(color: string, glass: boolean): THREE.CanvasTexture {
   return texture;
 }
 
-function makeBuilding(building: CampusBuilding, textures: THREE.Texture[]): { group: THREE.Group; roof: THREE.MeshStandardMaterial; body: THREE.MeshStandardMaterial; slabs: THREE.Mesh[] } {
+function makeBuilding(building: CampusBuilding, textures: THREE.Texture[]): { group: THREE.Group; roof: THREE.MeshStandardMaterial; body: THREE.MeshStandardMaterial; slabs: THREE.Mesh[]; interior: THREE.Group } {
   const group = new THREE.Group();
   group.position.set(building.position[0], 0, building.position[1]);
   const [w, h, d] = building.dimensions;
@@ -185,12 +186,29 @@ function makeBuilding(building: CampusBuilding, textures: THREE.Texture[]): { gr
     group.add(slab);
     return slab;
   });
+  const interior = new THREE.Group();
+  interior.visible = false;
+  interior.add(box(w * .88, .12, d * .88, '#e9ddc4', 0, .12, 0));
+  const entrance = buildingInteriorRoute(building, roadAccess(building))[0];
+  const door = new THREE.Group();
+  door.position.set(entrance.x - building.position[0], 0, entrance.z - building.position[1]);
+  if (Math.abs(door.position.x) > Math.abs(door.position.z)) door.rotation.y = Math.PI / 2;
+  for (const side of [-1, 1]) door.add(box(.28, 3.6, .28, '#6a57ad', side * 1.7, 1.8, 0));
+  door.add(box(3.7, .3, .28, '#6a57ad', 0, 3.65, 0));
+  interior.add(door);
+  const lobbyFloor = building.floors.find(floor => floor.level === 'G') ?? building.floors[0];
+  floorLayout(building, lobbyFloor, 0).desks.filter(desk => Math.abs(desk.x) > 2.5 && Math.abs(desk.z) > 2.5).slice(0, 12).forEach(desk => {
+    interior.add(box(1.4, .16, .8, '#b79a74', desk.x, 1.25, desk.z));
+    interior.add(box(.22, 1.1, .22, '#8f8578', desk.x, .68, desk.z));
+    interior.add(box(.6, .7, .6, '#eeeae0', desk.x, .45, desk.z + 1));
+  });
+  group.add(interior);
   if (building.style === 'classical') addClassicalDetails(group, w, h, d);
   if (building.style === 'tower') addTowerDetails(group, w, h);
   if (building.style === 'library' || building.style === 'brick') addBrickDetails(group, w, h, d);
   if (glass) addGlassDetails(group, w, h, d);
   group.traverse(object => { if (object instanceof THREE.Mesh) object.userData.buildingId = building.id; });
-  return { group, roof, body, slabs };
+  return { group, roof, body, slabs, interior };
 }
 
 function addClassicalDetails(group: THREE.Group, w: number, h: number, d: number): void {
@@ -363,6 +381,8 @@ function makeScene(container: HTMLDivElement, labels: HTMLDivElement, campus: Ca
   let phaseStarted = performance.now();
   let waypoints: GroundPoint[] = [];
   let routeIndex = 0;
+  let interiorStart = Infinity;
+  const openedBuildings = new Set<string>();
   let heading = new THREE.Vector3(0, 0, -1);
   let lastTravelFrame = performance.now();
   let exitOrigin = new THREE.Vector3(-13, .2, 61);
@@ -422,13 +442,17 @@ function makeScene(container: HTMLDivElement, labels: HTMLDivElement, campus: Ca
       pin.dataset.selected = String(building.id === state.selectedId);
       pin.querySelector('.map-pin-value')!.textContent = building.studyUseUnverified ? 'Unknown' : `${occupancy}%`;
       model.roof.color.set(state.heatmap ? band === 'quiet' ? '#92bd76' : band === 'moderate' ? '#dfae62' : '#d97954' : building.style === 'brick' ? '#c38964' : building.style === 'glass' ? '#8da7a7' : '#a6bd82');
+      model.roof.transparent = state.petGuide && openedBuildings.has(building.id);
+      model.roof.opacity = model.roof.transparent ? .08 : 1;
+      model.roof.depthWrite = !model.roof.transparent;
       model.body.emissive.set('#eebd75');
       model.body.emissiveIntensity = solar.windowGlow * .22;
-      model.body.transparent = building.id === state.selectedId && Boolean(state.selectedFloor);
-      model.body.opacity = model.body.transparent ? .35 : 1;
+      model.body.transparent = (building.id === state.selectedId && Boolean(state.selectedFloor)) || (state.petGuide && openedBuildings.has(building.id));
+      model.body.opacity = model.body.transparent ? state.petGuide ? .15 : .35 : 1;
       model.body.depthWrite = !model.body.transparent;
+      model.interior.visible = state.petGuide && openedBuildings.has(building.id);
       model.slabs.forEach((slab, index) => {
-        slab.visible = building.id === state.selectedId && Boolean(state.selectedFloor);
+        slab.visible = building.id === state.selectedId && Boolean(state.selectedFloor) && !state.petGuide;
         (slab.material as THREE.MeshStandardMaterial).emissive.set(building.floors[index].level === state.selectedFloor ? '#5a50dc' : '#000000');
         (slab.material as THREE.MeshStandardMaterial).emissiveIntensity = .32;
       });
@@ -449,7 +473,7 @@ function makeScene(container: HTMLDivElement, labels: HTMLDivElement, campus: Ca
     }
     controls.update();
     const selected = campus.buildings.find(building => building.id === state.selectedId);
-    ring.visible = Boolean(selected);
+    ring.visible = Boolean(selected) && !state.petGuide;
     sheep.group.visible = Boolean(state.petGuide && selected);
     if (selected) {
       ring.position.set(selected.position[0], .5, selected.position[1]);
@@ -471,7 +495,7 @@ function makeScene(container: HTMLDivElement, labels: HTMLDivElement, campus: Ca
             const dx = next.x - sheep.group.position.x;
             const dz = next.z - sheep.group.position.z;
             const distance = Math.hypot(dx, dz);
-            const step = reducedMotion ? distance : Math.min(distance, Math.min(50, timestamp - lastTravelFrame) * .024);
+            const step = reducedMotion ? distance : Math.min(distance, Math.min(200, timestamp - lastTravelFrame) * .024);
             if (distance > .01) {
               heading.set(dx / distance, 0, dz / distance);
               sheep.group.position.x += heading.x * step;
@@ -485,13 +509,18 @@ function makeScene(container: HTMLDivElement, labels: HTMLDivElement, campus: Ca
       }
     }
     lastTravelFrame = timestamp;
+    if (sheep.group.visible && frame % 15 === 0) {
+      container.dataset.woollyPosition = `${sheep.group.position.x.toFixed(1)},${sheep.group.position.z.toFixed(1)}`;
+      container.dataset.woollyStage = routeIndex > interiorStart ? 'inside' : 'street';
+    }
     if (sheep.group.visible && state.petPhase === 'touring') {
       const position = sheep.group.position;
       const drone = state.petView === 'drone';
-      const follow = drone ? position.clone().add(new THREE.Vector3(0, 55, 23)) : position.clone().addScaledVector(heading, -13).add(new THREE.Vector3(0, 7, 0));
-      const look = position.clone().addScaledVector(heading, drone ? 0 : 9).add(new THREE.Vector3(0, drone ? 0 : 2.6, 0));
-      camera.position.lerp(follow, reducedMotion ? 1 : .09);
-      controls.target.lerp(look, reducedMotion ? 1 : .09);
+      const inside = routeIndex >= interiorStart;
+      const follow = drone ? position.clone().add(new THREE.Vector3(0, 55, 23)) : position.clone().addScaledVector(heading, inside ? -7 : -13).add(new THREE.Vector3(0, inside ? 4.5 : 7, 0));
+      const look = position.clone().addScaledVector(heading, drone ? 0 : inside ? 4 : 9).add(new THREE.Vector3(0, drone ? 0 : 2.6, 0));
+      camera.position.lerp(follow, reducedMotion ? 1 : inside ? .18 : .12);
+      controls.target.lerp(look, reducedMotion ? 1 : inside ? .18 : .12);
       controls.update();
     }
     speechCloud.hidden = !sheep.group.visible || !state.petMessage;
@@ -550,12 +579,20 @@ function makeScene(container: HTMLDivElement, labels: HTMLDivElement, campus: Ca
       }
       if (next.petGuide && (!state.petGuide || state.selectedId !== next.selectedId)) {
         if (!state.petGuide) sheep.group.position.set(-13, .2, 61);
+        if (state.petGuide && state.selectedId) openedBuildings.add(state.selectedId);
+        if (next.selectedId) openedBuildings.add(next.selectedId);
         const building = campus.buildings.find(item => item.id === next.selectedId);
-        waypoints = building ? streetRoute({ x: sheep.group.position.x, z: sheep.group.position.z }, roadAccess(building)).slice(1) : [];
+        const previous = campus.buildings.find(item => item.id === state.selectedId);
+        const leaving = previous && routeIndex > interiorStart ? [...buildingInteriorRoute(previous, roadAccess(previous)).reverse().slice(1), roadAccess(previous)] : [];
+        const start = leaving.length ? leaving[leaving.length - 1] : { x: sheep.group.position.x, z: sheep.group.position.z };
+        const street = building ? streetRoute(start, roadAccess(building)).slice(1) : [];
+        waypoints = building ? [...leaving, ...street, ...buildingInteriorRoute(building, roadAccess(building))] : [];
+        interiorStart = leaving.length + street.length;
         routeIndex = 0;
         desiredCamera = desiredTarget = null;
       }
       if (state.petGuide && !next.petGuide) {
+        openedBuildings.clear();
         desiredTarget = new THREE.Vector3(0, 4, 0);
         desiredCamera = new THREE.Vector3(85, 145, 155);
       }
