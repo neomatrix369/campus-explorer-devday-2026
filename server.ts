@@ -33,11 +33,13 @@ app.get('/api/health', (_request, response) => {
 });
 
 let petMode: 'desktop' | 'tour' = 'desktop';
+let petTourExpiresAt = 0;
 const localPetRequest = (address: string | undefined): boolean =>
   address === '127.0.0.1' || address === '::1' || address === '::ffff:127.0.0.1';
 
 app.get('/api/pet/mode', (request, response) => {
   if (!localPetRequest(request.socket.remoteAddress)) return response.sendStatus(403);
+  if (petMode === 'tour' && Date.now() > petTourExpiresAt) petMode = 'desktop';
   return response.json({ mode: petMode });
 });
 
@@ -45,6 +47,7 @@ app.post('/api/pet/mode', (request, response) => {
   if (!localPetRequest(request.socket.remoteAddress)) return response.sendStatus(403);
   if (request.body?.mode !== 'desktop' && request.body?.mode !== 'tour') return response.status(400).json({ error: 'Invalid pet mode.' });
   petMode = request.body.mode;
+  petTourExpiresAt = petMode === 'tour' ? Date.now() + 10_000 : 0;
   return response.json({ mode: petMode });
 });
 

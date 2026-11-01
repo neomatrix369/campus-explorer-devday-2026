@@ -55,6 +55,10 @@ async function makeContactSheet(photos: string[]): Promise<string> {
   return canvas.toDataURL('image/png');
 }
 
+function postPetMode(mode: 'desktop' | 'tour'): void {
+  void fetch('/api/pet/mode', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode }) }).catch(() => undefined);
+}
+
 export default function App() {
   const [campusId, setCampusId] = useState('ucl-bloomsbury');
   const [customBuildings, setCustomBuildings] = useState<Record<string, CampusBuilding[]>>({});
@@ -122,6 +126,16 @@ export default function App() {
     soundRef.current = createSoundscape();
     return () => { window.clearTimeout(petTimer.current); window.clearTimeout(messageTimer.current); soundRef.current?.dispose(); };
   }, []);
+
+  useEffect(() => {
+    if (!petTour) return;
+    const heartbeat = window.setInterval(() => postPetMode('tour'), 2500);
+    const returnToDesktop = (): void => {
+      navigator.sendBeacon('/api/pet/mode', new Blob([JSON.stringify({ mode: 'desktop' })], { type: 'application/json' }));
+    };
+    window.addEventListener('pagehide', returnToDesktop);
+    return () => { window.clearInterval(heartbeat); window.removeEventListener('pagehide', returnToDesktop); };
+  }, [petTour]);
 
   useEffect(() => {
     const handle = (event: KeyboardEvent) => {
@@ -209,7 +223,7 @@ export default function App() {
       setTourStarted(false);
       setPetTour(false);
       setPetPhase('desktop');
-      void fetch('/api/pet/mode', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'desktop' }) }).catch(() => undefined);
+      postPetMode('desktop');
     }, 1300);
   }, [showPetMessage]);
 
@@ -257,7 +271,7 @@ export default function App() {
     soundRef.current?.cue(740);
     window.setTimeout(() => sceneRef.current?.focus(TOUR_STOPS[0].buildingId), 120);
     petTimer.current = window.setTimeout(() => { setPetPhase('touring'); setTourPlaying(true); }, 1500);
-    void fetch('/api/pet/mode', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'tour' }) }).catch(() => undefined);
+    postPetMode('tour');
   };
   const leaveTour = () => {
     if (petTour) finishPetExit();
