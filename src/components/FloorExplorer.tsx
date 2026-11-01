@@ -64,6 +64,9 @@ export function FloorExplorer({ building, campus, selectedFloor, hour, onFloor, 
     closeButton.current?.focus();
     return () => previous?.focus();
   }, []);
+  useEffect(() => {
+    dialog.current?.querySelector('.floor-tabs button.active')?.scrollIntoView({ block: 'nearest', inline: 'center' });
+  }, [floor.level]);
   return <div className="modal-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
     <div ref={dialog} className="floor-modal" onKeyDown={event => {
       if (event.key !== 'Tab') return;
@@ -73,7 +76,7 @@ export function FloorExplorer({ building, campus, selectedFloor, hour, onFloor, 
       if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
     }} role="dialog" aria-modal="true" aria-label={`${building.name} floor explorer`}>
       <div className="floor-modal-header"><div><h2>{building.name}</h2><p>{occupancyBand(occupancy)} on this floor · estimated occupancy</p></div><div className="floor-tabs">{building.floors.slice().reverse().map(item => <button key={item.level} className={item.level === floor.level ? 'active' : ''} onClick={() => onFloor(item.level)}>{item.level} <span>{estimatedOccupancy(item, hour)}%</span></button>)}</div><button ref={closeButton} className="icon-button" onClick={onClose} aria-label="Close floor explorer"><X size={20} /></button></div>
-      <div className="floor-modal-body"><section className="floor-visual"><div className="modal-section-heading"><strong>Furnished floor cutaway</strong><span>Drag to rotate · scroll to zoom</span></div><FloorScene3D building={building} selectedFloor={floor.level} hour={hour} onSelect={onFloor} /><p>Illustrative furniture, shared with the 2D plan. Other levels are faded; choose a floor above.</p></section>
+      <div className="floor-modal-body"><section className="floor-visual"><div className="modal-section-heading"><strong>Furnished floor cutaway</strong><span>Drag to rotate · scroll to zoom</span></div><FloorScene3D building={building} selectedFloor={floor.level} hour={hour} onSelect={onFloor} /><p>Illustrative furniture, shared with the 2D plan. {building.floors.some(item => item.level.startsWith('B')) ? 'B levels sit below the street-level rim.' : 'Other levels are faded.'} Choose a floor from the tabs or 3D stack.</p></section>
       <section className="floor-plan-section"><div className="modal-section-heading"><strong>Floor {floor.level} · {floor.name}</strong><span>2D schematic</span></div><FloorPlan building={building} floor={floor} occupancy={occupancy} />
         <div className="plan-legend"><span><i className="legend-desk" /> Desks</span><span><i className="legend-person" /> Occupied estimate</span><span><i className="legend-pod" /> Lift / stairs</span></div>
         <div className="floor-kpis"><div><strong>{occupancy}%</strong><span>occupied est.</span></div><div><strong>~{free}</strong><span>seats free</span></div><div><strong>~{estimatedNoise(floor, occupancy)} dB</strong><span>noise est.</span></div><div><strong>{floor.sockets ? <BatteryCharging size={20} /> : '—'}</strong><span>charging est.</span></div><div><strong>{floor.water ? <Droplets size={20} /> : '—'}</strong><span>water est.</span></div></div>

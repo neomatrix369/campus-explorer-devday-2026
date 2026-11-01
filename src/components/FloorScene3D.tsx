@@ -12,6 +12,35 @@ function cuboid(parent: THREE.Group, size: [number, number, number], position: [
   return mesh;
 }
 
+function floorLabel(parent: THREE.Group, level: string, width: number, depth: number, active: boolean): void {
+  const canvas = document.createElement('canvas');
+  canvas.width = 160;
+  canvas.height = 64;
+  const context = canvas.getContext('2d');
+  if (!context) return;
+  context.fillStyle = active ? '#5b4bd8' : level.startsWith('B') ? '#385f7c' : '#56606a';
+  context.fillRect(10, 6, 140, 52);
+  context.fillStyle = '#ffffff';
+  context.font = 'bold 34px sans-serif';
+  context.textAlign = 'center';
+  context.textBaseline = 'middle';
+  context.fillText(level, 80, 33);
+  const texture = new THREE.CanvasTexture(canvas);
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, depthTest: false }));
+  sprite.scale.set(5.5, 2.2, 1);
+  sprite.position.set(-width / 2 - 3, 1.1, depth / 2 + 1);
+  parent.add(sprite);
+}
+
+function addGroundRim(scene: THREE.Scene, width: number, depth: number, elevation: number): void {
+  const ground = new THREE.Group();
+  ground.name = 'ground-level-rim';
+  cuboid(ground, [width + 10, .65, 3], [0, elevation, -depth / 2 - 1.5], '#c3cbbd', .72);
+  cuboid(ground, [3, .65, depth + 8], [-width / 2 - 1.5, elevation, 0], '#c3cbbd', .72);
+  cuboid(ground, [3, .65, depth + 8], [width / 2 + 1.5, elevation, 0], '#c3cbbd', .72);
+  scene.add(ground);
+}
+
 export function FloorScene3D({ building, selectedFloor, hour, onSelect }: { building: CampusBuilding; selectedFloor: string; hour: number; onSelect: (floor: string) => void }) {
   const host = useRef<HTMLDivElement>(null);
   const select = useRef(onSelect);
@@ -28,30 +57,35 @@ export function FloorScene3D({ building, selectedFloor, hour, onSelect }: { buil
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.minDistance = 12;
     controls.maxDistance = 150;
-    controls.maxPolarAngle = Math.PI * .48;
+    controls.maxPolarAngle = Math.PI * .64;
     scene.add(new THREE.HemisphereLight('#ffffff', '#a19dba', 2.8));
     const light = new THREE.DirectionalLight('#fff5e0', 2);
     light.position.set(20, 40, 30);
     scene.add(light);
     const floors = building.floors;
-    const selectedIndex = Math.max(0, floors.findIndex(floor => floor.level === selectedFloor));
     const spacing = 6;
-    const focusY = selectedIndex * spacing;
+    const groundIndex = Math.max(0, floors.findIndex(floor => floor.level === 'G'));
+    const elevation = (index: number): number => (index - groundIndex) * spacing;
+    const bottomY = elevation(0);
+    const topY = elevation(floors.length - 1);
+    const focusY = (bottomY + topY) / 2;
     controls.target.set(0, focusY, 0);
-    const distance = Math.max(building.dimensions[0], building.dimensions[2]) * 1.2;
-    camera.position.set(distance, focusY + distance * .95, distance * 1.1);
+    const distance = Math.max(building.dimensions[0], building.dimensions[2], (topY - bottomY) * 1.25) * 1.1;
+    camera.position.set(distance, focusY + distance * .8, distance * 1.2);
     const meshes: THREE.Object3D[] = [];
+    if (groundIndex > 0) addGroundRim(scene, building.dimensions[0], building.dimensions[2], -spacing / 2);
     floors.forEach((floor, index) => {
       const active = floor.level === selectedFloor;
       const group = new THREE.Group();
-      group.position.y = index * spacing;
+      group.position.y = elevation(index);
       const occupancy = estimatedOccupancy(floor, hour);
       const band = occupancyBand(occupancy);
       const { width, depth, desks, pods } = floorLayout(building, floor, occupancy);
       const color = band === 'quiet' ? '#adc78b' : band === 'moderate' ? '#ddb974' : '#d79b82';
-      const slab = cuboid(group, [width, .45, depth], [0, 0, 0], color, active ? 1 : .12);
+      const slab = cuboid(group, [width, .45, depth], [0, 0, 0], color, active ? 1 : index < groundIndex ? .35 : .16);
       slab.userData.floor = floor.level;
       meshes.push(slab);
+      floorLabel(group, floor.level, width, depth, active);
       if (active) {
         cuboid(group, [width, 1.7, .2], [0, 1, -depth / 2], '#e4e3d8', .5);
         cuboid(group, [.2, 1.7, depth], [-width / 2, 1, 0], '#e4e3d8', .5);
@@ -105,9 +139,15 @@ export function FloorScene3D({ building, selectedFloor, hour, onSelect }: { buil
     return () => {
       resize.disconnect(); controls.removeEventListener('change', render); controls.dispose();
       renderer.domElement.removeEventListener('pointerdown', onDown); renderer.domElement.removeEventListener('pointerup', onUp);
-      scene.traverse(item => { if (item instanceof THREE.Mesh) { item.geometry.dispose(); (item.material as THREE.Material).dispose(); } });
+      scene.traverse(item => {
+        if (item instanceof THREE.Mesh) { item.geometry.dispose(); (item.material as THREE.Material).dispose(); }
+        if (item instanceof THREE.Sprite) { item.material.map?.dispose(); item.material.dispose(); }
+      });
       renderer.dispose(); renderer.domElement.remove();
     };
   }, [building, selectedFloor, hour]);
-  return <div className="floor-scene" ref={host} role="img" aria-label={`Rotatable furnished schematic of ${building.name}, floor ${selectedFloor}. Use the floor buttons to change levels.`} />;
+  const hasBasement = building.floors.some(floor => floor.level.startsWith('B'));
+  return <div className="floor-scene" ref={host} role="img" aria-label={`Rotatable furnished schematic of ${building.name}, floor ${selectedFloor}. ${hasBasement ? 'Basement floors are below street level.' : ''} Use the floor buttons to change levels.`}>
+    {hasBasement && <div className="floor-ground-key">Street level <span>↓ Basements</span></div>}
+  </div>;
 }
