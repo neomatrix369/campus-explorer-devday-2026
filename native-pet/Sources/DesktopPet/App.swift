@@ -122,8 +122,8 @@ final class PetManager: NSObject {
     private func setTourMode(_ active: Bool) {
         guard tourMode != active else { return }
         tourMode = active
-        if active { pets.forEach { $0.orderOut(nil) } }
-        else { pets.forEach { $0.orderFrontRegardless() } }
+        if active { pets.forEach { $0.walkIntoPortal() } }
+        else { pets.forEach { $0.walkOutOfPortal() } }
         rebuildMenu()
     }
 
@@ -163,7 +163,7 @@ final class PetManager: NSObject {
                 return
             }
             self.setTourMode(true)
-            self.openCampusRoute("sheepTour")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { self.openCampusRoute("sheepTour") }
         }
     }
 

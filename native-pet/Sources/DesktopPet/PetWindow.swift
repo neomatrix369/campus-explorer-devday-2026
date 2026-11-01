@@ -44,6 +44,8 @@ final class PetWindow: NSWindow {
     var childPets: [PetWindow] { children }
 
     private var timer: Timer?
+    private var portalTimer: Timer?
+    private var portalOrigin: CGPoint?
 
     // Smooth presentation (upstream #161): the engine moves positionX/Y once per animation frame; the window
     // glides between those positions on a separate ~60 Hz timer. Tossing and window following run there too.
@@ -151,8 +153,62 @@ final class PetWindow: NSWindow {
 
     // MARK: - Public control
 
+    func walkIntoPortal() {
+        portalTimer?.invalidate()
+        let start = CGPoint(x: positionX, y: positionY)
+        portalOrigin = start
+        stopTimer()
+        stopMotionTimer()
+        animatePortal(from: start, to: portalPoint()) { [weak self] in self?.orderOut(nil) }
+    }
+
+    func walkOutOfPortal() {
+        portalTimer?.invalidate()
+        stopTimer()
+        stopMotionTimer()
+        let start = portalPoint()
+        let destination = portalOrigin ?? CGPoint(x: positionX, y: positionY)
+        positionX = Double(start.x)
+        positionY = Double(start.y)
+        alphaValue = 1
+        applyPosition()
+        orderFrontRegardless()
+        animatePortal(from: start, to: destination) { [weak self] in
+            guard let self else { return }
+            self.scheduleTimer(ms: self.intervalMs)
+        }
+    }
+
+    private func portalPoint() -> CGPoint {
+        let area = screenArea
+        return CGPoint(x: area.midX - CGFloat(petWidth) / 2, y: area.midY - CGFloat(petHeight) / 2)
+    }
+
+    private func animatePortal(from start: CGPoint, to destination: CGPoint, completion: @escaping () -> Void) {
+        let started = Self.now()
+        let duration = 1150.0
+        let motion = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] timer in
+            guard let self, !self.closed else { timer.invalidate(); return }
+            let progress = min(1, (Self.now() - started) / duration)
+            let eased = progress * progress * (3 - 2 * progress)
+            self.positionX = Double(start.x + (destination.x - start.x) * CGFloat(eased))
+            self.positionY = Double(start.y + (destination.y - start.y) * CGFloat(eased))
+            self.showFrame(index: Int(progress * 18) % max(1, self.current.sequence.frames.count))
+            self.applyPosition()
+            if progress >= 1 {
+                timer.invalidate()
+                self.portalTimer = nil
+                completion()
+            }
+        }
+        portalTimer = motion
+        RunLoop.main.add(motion, forMode: .common)
+    }
+
     /// Port of FormPet.Play(): choose a spawn point and start.
     func play(forceSpawn: Int = -1) {
+        portalTimer?.invalidate()
+        portalTimer = nil
         stopTimer()
         animationStep = 0
         currentWindow = nil
@@ -247,6 +303,8 @@ final class PetWindow: NSWindow {
     func closePet() {
         if closed { return }
         closed = true
+        portalTimer?.invalidate()
+        portalTimer = nil
         stopTimer()
         stopMotionTimer()
         for c in children { c.closePet() }
