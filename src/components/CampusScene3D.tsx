@@ -61,7 +61,7 @@ function createGuideSheep(): { group: THREE.Group; feet: THREE.Mesh[] } {
   for (const x of [-.2, .2]) sheepPart(group, '#fff', [x, 1.48, 1.13], [.12, .15, .06]);
   for (const x of [-.2, .2]) sheepPart(group, '#211d1c', [x, 1.48, 1.18], [.06, .08, .04]);
   const feet = [-.65, .65].flatMap(x => [-.4, .4].map(z => sheepPart(group, '#524944', [x, .44, z], [.2, .45, .2])));
-  group.scale.setScalar(3.5);
+  group.scale.setScalar(5);
   return { group, feet };
 }
 
@@ -377,10 +377,11 @@ function makeScene(container: HTMLDivElement, labels: HTMLDivElement, campus: Ca
       ring.position.set(selected.position[0], .5, selected.position[1]);
       ring.scale.setScalar(1 + Math.sin(frame * .045) * .06);
       if (sheep.group.visible) {
-        const destination = new THREE.Vector3(selected.position[0] + selected.dimensions[0] / 2 + 5, .2, selected.position[1] + selected.dimensions[2] / 2 + 5);
+        const standingY = selected.dimensions[1] + .5;
+        const destination = new THREE.Vector3(selected.position[0] + selected.dimensions[0] * .2, standingY, selected.position[1] + selected.dimensions[2] * .2);
         if (sheep.group.position.lengthSq() === 0) sheep.group.position.copy(destination);
         sheep.group.position.lerp(destination, .09);
-        sheep.group.position.y = .2 + (reducedMotion ? 0 : Math.abs(Math.sin(frame * .12)) * .18);
+        sheep.group.position.y = standingY + (reducedMotion ? 0 : Math.abs(Math.sin(frame * .12)) * .18);
         sheep.feet.forEach((foot, index) => { foot.rotation.x = reducedMotion ? 0 : Math.sin(frame * .12 + index * Math.PI) * .35; });
       }
     }
@@ -399,7 +400,7 @@ function makeScene(container: HTMLDivElement, labels: HTMLDivElement, campus: Ca
       const pin = pins.get(building.id)!;
       const point = new THREE.Vector3(building.position[0], building.dimensions[1] + 2, building.position[1]).project(camera);
       const visible = point.z < 1 && point.z > -1 && Math.abs(point.x) < 1.3 && Math.abs(point.y) < 1.3;
-      pin.style.display = visible ? 'inline-flex' : 'none';
+      pin.style.display = visible && !(state.petGuide && building.id === state.selectedId) ? 'inline-flex' : 'none';
       pin.style.left = `${(point.x * .5 + .5) * container.clientWidth}px`;
       pin.style.top = `${(-point.y * .5 + .5) * container.clientHeight}px`;
     }
