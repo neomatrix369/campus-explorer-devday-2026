@@ -47,6 +47,42 @@ final class SoundPlayer: NSObject, AVAudioPlayerDelegate {
     var enabled = true
     private var players: [ObjectIdentifier: AVAudioPlayer] = [:]
 
+    func sing() -> Void {
+        play(PetSound(animationID: 0, probability: 100, loop: 0, data: Self.songData()))
+    }
+
+    private static func songData() -> Data {
+        let sampleRate = 22_050
+        let noteSeconds = 0.23
+        let notes = [392.0, 440.0, 523.25, 440.0, 392.0, 329.63, 392.0]
+        let samplesPerNote = Int(Double(sampleRate) * noteSeconds)
+        let sampleCount = samplesPerNote * notes.count
+        var wav = Data()
+        func appendLittleEndian<T: FixedWidthInteger>(_ value: T) {
+            Swift.withUnsafeBytes(of: value.littleEndian) { wav.append(contentsOf: $0) }
+        }
+        wav.append(contentsOf: "RIFF".utf8)
+        appendLittleEndian(UInt32(36 + sampleCount * 2))
+        wav.append(contentsOf: "WAVEfmt ".utf8)
+        appendLittleEndian(UInt32(16))
+        appendLittleEndian(UInt16(1))
+        appendLittleEndian(UInt16(1))
+        appendLittleEndian(UInt32(sampleRate))
+        appendLittleEndian(UInt32(sampleRate * 2))
+        appendLittleEndian(UInt16(2))
+        appendLittleEndian(UInt16(16))
+        wav.append(contentsOf: "data".utf8)
+        appendLittleEndian(UInt32(sampleCount * 2))
+        for index in 0..<sampleCount {
+            let noteIndex = index / samplesPerNote
+            let localTime = Double(index % samplesPerNote) / Double(sampleRate)
+            let envelope = max(0, min(1, localTime / 0.025, (noteSeconds - localTime) / 0.05))
+            let tone = sin(2 * Double.pi * notes[noteIndex] * localTime) * envelope * 0.32
+            appendLittleEndian(Int16(tone * Double(Int16.max)))
+        }
+        return wav
+    }
+
     func play(_ sound: PetSound) {
         guard enabled, volume > 0 else { return }
         do {

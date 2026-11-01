@@ -3,6 +3,7 @@ export type SoundMode = 'off' | 'lofi' | 'rain';
 export interface Soundscape {
   setMode: (mode: SoundMode) => void;
   cue: (frequency?: number) => void;
+  sing: () => void;
   dispose: () => void;
 }
 
@@ -79,5 +80,27 @@ export function createSoundscape(): Soundscape {
     oscillator.stop(context.currentTime + .3);
   };
 
-  return { setMode, cue, dispose: () => { stop(); void context?.close(); context = master = null; } };
+  const sing = (): void => {
+    const audio = ensure();
+    void audio.context.resume();
+    const notes = [392, 440, 523.25, 440, 392, 329.63, 392];
+    const start = audio.context.currentTime + .03;
+    notes.forEach((frequency, index) => {
+      const oscillator = audio.context.createOscillator();
+      const gain = audio.context.createGain();
+      const at = start + index * .23;
+      oscillator.type = 'triangle';
+      oscillator.frequency.setValueAtTime(frequency, at);
+      oscillator.frequency.linearRampToValueAtTime(frequency * .97, at + .18);
+      gain.gain.setValueAtTime(.0001, at);
+      gain.gain.linearRampToValueAtTime(.09, at + .03);
+      gain.gain.exponentialRampToValueAtTime(.0001, at + .21);
+      oscillator.connect(gain).connect(audio.context.destination);
+      oscillator.start(at);
+      oscillator.stop(at + .22);
+      oscillator.onended = () => { oscillator.disconnect(); gain.disconnect(); };
+    });
+  };
+
+  return { setMode, cue, sing, dispose: () => { stop(); void context?.close(); context = master = null; } };
 }

@@ -764,6 +764,7 @@ final class PetWindow: NSWindow {
         menu.addItem(.separator())
         menu.addItem(withTitle: "Lead CampusExplorer tour", action: #selector(menuLeadTour), keyEquivalent: "").target = self
         menu.addItem(withTitle: "Find a quiet study spot", action: #selector(menuFindQuietSpot), keyEquivalent: "").target = self
+        menu.addItem(withTitle: "Hear Woolly sing", action: #selector(menuSing), keyEquivalent: "").target = self
         menu.addItem(withTitle: "Remove this pet", action: #selector(menuRemove), keyEquivalent: "").target = self
 
         let debug = NSMenu()
@@ -805,6 +806,7 @@ final class PetWindow: NSWindow {
     @objc private func menuRemove() { kill() }
     @objc private func menuLeadTour() { manager?.launchCampusTour() }
     @objc private func menuFindQuietSpot() { manager?.findQuietSpot() }
+    @objc private func menuSing() { manager?.sing() }
     @objc private func menuJump(_ sender: NSMenuItem) { setNewAnimation(sender.tag) }
     @objc private func menuSpawn(_ sender: NSMenuItem) { play(forceSpawn: sender.tag) }
 }

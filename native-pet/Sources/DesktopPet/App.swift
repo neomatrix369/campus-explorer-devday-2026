@@ -148,6 +148,10 @@ final class PetManager: NSObject {
         openCampusRoute("sheepFind")
     }
 
+    func sing() -> Void {
+        SoundPlayer.shared.sing()
+    }
+
     func launchCampusTour() {
         postTourMode("tour") { [weak self] ok in
             guard let self = self else { return }
@@ -225,6 +229,7 @@ final class PetManager: NSObject {
         menu.addItem(.separator())
         menu.addItem(withTitle: "Lead CampusExplorer tour", action: #selector(menuLeadTour), keyEquivalent: "t").target = self
         menu.addItem(withTitle: "Find a quiet study spot", action: #selector(menuFindQuietSpot), keyEquivalent: "f").target = self
+        menu.addItem(withTitle: "Hear Woolly sing", action: #selector(menuSing), keyEquivalent: "s").target = self
         if tourMode { menu.addItem(withTitle: "Return to desktop", action: #selector(menuReturnToDesktop), keyEquivalent: "r").target = self }
         menu.addItem(.separator())
 
@@ -293,6 +298,7 @@ final class PetManager: NSObject {
     @objc private func menuRemoveAll() { killAllPets() }
     @objc private func menuLeadTour() { launchCampusTour() }
     @objc private func menuFindQuietSpot() { findQuietSpot() }
+    @objc private func menuSing() { sing() }
     @objc private func menuReturnToDesktop() {
         postTourMode("desktop") { [weak self] _ in self?.setTourMode(false) }
     }
