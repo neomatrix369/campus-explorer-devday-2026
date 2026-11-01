@@ -1,0 +1,122 @@
+{
+  "name": "campus-explorer-hackathon",
+  "app": {
+    "start": "npm run dev",
+    "cwd": "..",
+    "env": { "PORT": "3002" },
+    "url": "http://127.0.0.1:3002/",
+    "readyTimeoutMs": 30000
+  },
+  "video": { "width": 1440, "height": 810, "fps": 24 },
+  "voice": { "provider": "local" },
+  "theme": {
+    "colors": {
+      "paper": "#f8f9f8",
+      "ink": "#202733",
+      "accent": "#5145e8",
+      "muted": "#727b88",
+      "dark": "#1f2540",
+      "surface": "#ffffff",
+      "onAccent": "#ffffff",
+      "captionBg": "#202733e8",
+      "captionInk": "#ffffff"
+    },
+    "fonts": {
+      "display": { "family": "Inter", "file": "fonts/Inter-Variable.ttf", "weight": "800", "fallback": "sans-serif" }
+    },
+    "type": { "title": 78, "sub": 28, "caption": 25 },
+    "annotation": { "style": "clean", "spot": "box", "dim": true }
+  },
+  "join": { "maxDurationSec": 90 },
+  "audio": {
+    "music": [{ "name": "soft-focus", "file": "sound-kit/music-upbeat.mp3", "loop": true, "volumeDb": -22, "fadeInMs": 500, "fadeOutMs": 1200 }],
+    "sfx": { "pop": { "file": "sound-kit/pop.mp3", "volumeDb": -7 } },
+    "autoSfx": { "click": "pop" }
+  },
+  "walkthrough": {
+    "video": { "startMark": "start" },
+    "scenes": [
+      {
+        "id": "s1_intro",
+        "before": [
+          { "waitFor": ".map-pin" },
+          { "title": { "heading": "CampusExplorer", "sub": "Find a quiet seat before you walk there", "instant": true } },
+          { "mark": "start" }
+        ],
+        "say": "CampusExplorer helps a student find a quiet place to study before they walk across campus. This is a schematic, four-university demo.",
+        "during": [{ "fromEnd": 1200, "title": false }]
+      },
+      {
+        "id": "s2_map",
+        "before": [{ "eval": "window.__fx.chip('1 · Explore the campus')" }],
+        "say": "I choose UCL Bloomsbury and preview this afternoon. The three-dimensional map marks buildings with estimated crowding, clearly labelled as simulated.",
+        "during": [
+          { "at": 500, "eval": "window.__fx.spot('.map-title', 'UCL Bloomsbury')" },
+          { "at": 2400, "eval": "window.__fx.unspot()" },
+          { "at": 2800, "hover": ".map-pin[data-building-id='ucl-student-centre']" }
+        ],
+        "gapMs": 300
+      },
+      {
+        "id": "s3_ask",
+        "before": [{ "eval": "window.__fx.chip('2 · Ask for a spot')" }],
+        "say": "Now I ask for a quiet seat with charging and water. The local finder works even without an AI key.",
+        "during": [
+          { "at": 300, "click": ".example-chips button:last-child" },
+          { "at": 2500, "waitFor": ".answer-card" },
+          { "at": 2900, "eval": "window.__fx.spot('.answer-card', 'Suggested floor')" },
+          { "fromEnd": 850, "eval": "window.__fx.unspot()" }
+        ],
+        "gapMs": 300
+      },
+      {
+        "id": "s4_result",
+        "before": [{ "waitFor": ".inspector" }, { "eval": "window.__fx.chip('3 · Inspect the result')" }],
+        "say": "It recommends the Student Centre basement level two. I can see estimated free seats and noise, then focus the building in three dimensions.",
+        "during": [
+          { "at": 500, "click": "button:has-text('Show in 3D')" },
+          { "at": 3000, "eval": "window.__fx.spot('.inspector', 'Building details')" },
+          { "fromEnd": 900, "eval": "window.__fx.unspot()" }
+        ],
+        "gapMs": 300
+      },
+      {
+        "id": "s5_floors",
+        "before": [
+          { "click": "button:has-text('Open floor explorer')" },
+          { "waitFor": ".floor-modal" },
+          { "eval": "window.__fx.chip('4 · Compare floors')" }
+        ],
+        "say": "Opening the floor explorer lets me compare floors and see the suggested area. These plans and amenities are illustrative, so I confirm access before travelling.",
+        "during": [
+          { "at": 600, "eval": "window.__fx.spot('.floor-modal', 'Floor explorer')" },
+          { "at": 2500, "eval": "window.__fx.unspot()" }
+        ],
+        "gapMs": 300
+      },
+      {
+        "id": "s6_verify",
+        "before": [
+          { "press": "Escape" },
+          { "waitFor": ".inspector-sources" },
+          { "eval": "window.__fx.chip('5 · Verify before visiting')" }
+        ],
+        "say": "The official UCL map is one click away. From a question to a floor and a source to verify it, that is the core CampusExplorer journey.",
+        "during": [
+          { "at": 500, "eval": "window.__fx.spot('.inspector-sources', 'Official campus link')" },
+          { "fromEnd": 900, "eval": "window.__fx.unspot()" }
+        ],
+        "gapMs": 300
+      },
+      {
+        "id": "s7_outro",
+        "before": [
+          { "eval": "window.__fx.chip(false)" },
+          { "title": { "heading": "CampusExplorer", "sub": "Ask → inspect → verify", "instant": true, "credit": "Built with Codex · Campus data simulated for this demo" } }
+        ],
+        "say": "Built with Codex, and tested at desktop and mobile widths. CampusExplorer.",
+        "gapMs": 600
+      }
+    ]
+  }
+}

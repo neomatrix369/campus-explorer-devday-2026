@@ -27,10 +27,14 @@ npm run build
 
 ## Use it
 
-Select a university and campus in the header. Drag to rotate the map, scroll to zoom, select a building pin, and choose a floor. The time slider previews estimated changes. The study finder accepts requests such as “quiet seat with charging and water” and shows cumulative AI usage. The Map lab accepts a GeoJSON `FeatureCollection` of `Polygon` footprints, a building JSON spec, or a written description for an illustrative three-floor building. All imported data stays in browser memory for the session.
+**Core journey:** choose UCL Bloomsbury, ask for “quiet seat with charging and water”, inspect the suggested floor in 3D, then open the official campus map to verify details before travelling. Drag to rotate, scroll to zoom, or move the time slider to compare estimates. The Map lab also accepts GeoJSON polygons, building JSON, or a written description for an illustrative three-floor building. Imports stay in browser memory for the session.
 
 ## Learn more
 
 - [Combined AI Studio prompt](AI_STUDIO_PROMPT.md)
 - [Architecture and data limits](docs/ARCHITECTURE_AND_USER_GUIDE.md)
+- [Asset and code credits](docs/CREDITS.md)
+- [Under-90-second demo storyboard](demo-video/storyboard.json)
 - Official maps: [UCL](https://maps.ucl.ac.uk/downloads/), [King's Strand](https://www.kcl.ac.uk/assets/pdf24/strand-campus-map-2025.pdf), [Imperial](https://www.imperial.ac.uk/study/visit/undergraduate/open-days/campus-map/), [LSE](https://www.lse.ac.uk/lse-information/campus-map)
+
+Built with Codex at the DevDay Exchange London Community Hackathon on 1 November 2026. One concrete Codex contribution: it implemented the floor-ranking fallback and the schematic PDF/GeoJSON export path, then verified them with nine logic tests and browser journeys at 1280 px and 390 px. See `src/utils/campusLogic.ts`, `src/utils/mapExports.ts`, and `scripts/ui-qa.mjs`.
