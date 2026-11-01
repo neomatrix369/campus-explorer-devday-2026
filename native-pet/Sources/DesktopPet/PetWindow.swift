@@ -179,6 +179,32 @@ final class PetWindow: NSWindow {
         }
     }
 
+    /// Bring a wandering pet into the middle of the display the user is using.
+    func summon() {
+        guard !closed else { return }
+        portalTimer?.invalidate()
+        stopTimer()
+        stopMotionTimer()
+        displayIndex = DesktopGeometry.screenIndex(containing: DesktopGeometry.mouseLocation) ?? 0
+        let target = portalPoint()
+        positionX = Double(target.x)
+        positionY = Double(target.y)
+        offsetY = 0
+        currentWindow = nil
+        isLeaving = false
+        isDragging = false
+        isTossing = false
+        alphaValue = 1
+        showFrame(index: 0)
+        applyPosition()
+        orderFrontRegardless()
+        portalTimer = Timer.scheduledTimer(withTimeInterval: 3, repeats: false) { [weak self] _ in
+            guard let self, !self.closed else { return }
+            self.portalTimer = nil
+            self.scheduleTimer(ms: self.intervalMs)
+        }
+    }
+
     private func portalPoint() -> CGPoint {
         let area = screenArea
         return CGPoint(x: area.midX - CGFloat(petWidth) / 2, y: area.midY - CGFloat(petHeight) / 2)

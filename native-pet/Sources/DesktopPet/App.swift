@@ -9,6 +9,8 @@ final class PetManager: NSObject {
     private var statusItem: NSStatusItem?
     private let defaults = UserDefaults.standard
     private var tourMode = false
+    private var lastSummonId = 0
+    private var bridgeEpoch = ""
     private let campusURL = URL(string: ProcessInfo.processInfo.environment["CAMPUS_URL"] ?? "http://127.0.0.1:3000")!
 
     var scale: Int {
@@ -112,11 +114,27 @@ final class PetManager: NSObject {
 
     private func pollTourMode() {
         let url = campusURL.appendingPathComponent("api/pet/mode")
-        URLSession.shared.dataTask(with: url) { [weak self] data, _, _ in
+        var request = URLRequest(url: url)
+        request.setValue("1", forHTTPHeaderField: "X-DesktopPet")
+        request.setValue(definition == nil ? "0" : "1", forHTTPHeaderField: "X-DesktopPet-Ready")
+        URLSession.shared.dataTask(with: request) { [weak self] data, _, _ in
             guard let data = data,
-                  let value = try? JSONSerialization.jsonObject(with: data) as? [String: String],
-                  let mode = value["mode"] else { return }
-            DispatchQueue.main.async { self?.setTourMode(mode == "tour") }
+                  let value = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let mode = value["mode"] as? String else { return }
+            let summonId = value["summonId"] as? Int ?? 0
+            let epoch = value["bridgeEpoch"] as? String ?? ""
+            DispatchQueue.main.async {
+                guard let self else { return }
+                if epoch != self.bridgeEpoch {
+                    self.bridgeEpoch = epoch
+                    self.lastSummonId = 0
+                }
+                self.setTourMode(mode == "tour")
+                if summonId > self.lastSummonId {
+                    self.lastSummonId = summonId
+                    self.callPets()
+                }
+            }
         }.resume()
     }
 
@@ -198,6 +216,14 @@ final class PetManager: NSObject {
         pets.forEach { $0.sync() }
     }
 
+    func callPets() {
+        if tourMode { setTourMode(false) }
+        if pets.isEmpty { addPet() }
+        guard let pet = pets.first else { return }
+        pet.summon()
+        speechBubble.show("Baa! Here I am.", beside: pet, speak: soundEnabled)
+    }
+
     func petClosed(_ w: PetWindow) {
         pets.removeAll { $0 === w }
     }
@@ -241,6 +267,7 @@ final class PetManager: NSObject {
         menu.addItem(.separator())
 
         menu.addItem(withTitle: "Add pet", action: #selector(menuAddPet), keyEquivalent: "n").target = self
+        menu.addItem(withTitle: "Call Woolly here", action: #selector(menuCallPet), keyEquivalent: "c").target = self
         menu.addItem(withTitle: "Sync pets", action: #selector(menuSync), keyEquivalent: "").target = self
         menu.addItem(withTitle: "Remove all pets", action: #selector(menuRemoveAll), keyEquivalent: "").target = self
         menu.addItem(.separator())
@@ -312,6 +339,7 @@ final class PetManager: NSObject {
     }
 
     @objc private func menuAddPet() { addPet() }
+    @objc private func menuCallPet() { callPets() }
     @objc private func menuSync() { syncAllPets() }
     @objc private func menuRemoveAll() { killAllPets() }
     @objc private func menuLeadTour() { launchCampusTour() }

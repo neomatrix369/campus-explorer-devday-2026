@@ -4,6 +4,7 @@ import { createServer as createViteServer } from 'vite';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { existsSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { TOUR_STOPS } from './src/data/tour.ts';
 import { TOUR_AUDIO } from './src/data/audio.ts';
 import { ALL_BUILDINGS, UNIVERSITIES } from './src/data/campusData.ts';
@@ -34,13 +35,25 @@ app.get('/api/health', (_request, response) => {
 
 let petMode: 'desktop' | 'tour' = 'desktop';
 let petTourExpiresAt = 0;
+const petBridgeEpoch = randomUUID();
+let petSummonId = 0;
+let petSummonExpiresAt = 0;
+let lastDesktopPetPollAt = 0;
 const localPetRequest = (address: string | undefined): boolean =>
   address === '127.0.0.1' || address === '::1' || address === '::ffff:127.0.0.1';
+const sameOriginOrCli = (origin: string | undefined, host: string | undefined): boolean => {
+  if (!origin) return true;
+  try {
+    const url = new URL(origin);
+    return (url.protocol === 'http:' || url.protocol === 'https:') && url.host === host;
+  } catch { return false; }
+};
 
 app.get('/api/pet/mode', (request, response) => {
   if (!localPetRequest(request.socket.remoteAddress)) return response.sendStatus(403);
+  if (request.get('X-DesktopPet') === '1' && request.get('X-DesktopPet-Ready') === '1') lastDesktopPetPollAt = Date.now();
   if (petMode === 'tour' && Date.now() > petTourExpiresAt) petMode = 'desktop';
-  return response.json({ mode: petMode });
+  return response.json({ mode: petMode, bridgeEpoch: petBridgeEpoch, summonId: Date.now() < petSummonExpiresAt ? petSummonId : 0 });
 });
 
 app.post('/api/pet/mode', (request, response) => {
@@ -49,6 +62,17 @@ app.post('/api/pet/mode', (request, response) => {
   petMode = request.body.mode;
   petTourExpiresAt = petMode === 'tour' ? Date.now() + 10_000 : 0;
   return response.json({ mode: petMode });
+});
+
+app.post('/api/pet/summon', (request, response) => {
+  if (!localPetRequest(request.socket.remoteAddress)) return response.sendStatus(403);
+  if (!sameOriginOrCli(request.get('Origin'), request.get('Host'))) return response.sendStatus(403);
+  if (Date.now() - lastDesktopPetPollAt > 5000) return response.status(503).json({ error: 'Start the macOS desktop pet to call Woolly.' });
+  petMode = 'desktop';
+  petTourExpiresAt = 0;
+  petSummonId++;
+  petSummonExpiresAt = Date.now() + 10_000;
+  return response.json({ summonId: petSummonId });
 });
 
 app.post('/api/ai/concierge', async (request, response) => {
