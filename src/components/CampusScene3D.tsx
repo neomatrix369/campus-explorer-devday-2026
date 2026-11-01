@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import type { CampusBuilding, CampusProfile } from '../data/campusData.ts';
 import { buildingOccupancy, occupancyBand, sunState } from '../utils/campusLogic.ts';
+import { roadAccess, streetRoute, type GroundPoint } from '../utils/petRoute.ts';
 
 export interface SceneHandle {
   focus: (buildingId: string) => void;
@@ -24,6 +25,8 @@ interface SceneProps {
   petPhase: PetPhase;
   petMessage: string | null;
   petActivity: PetActivity;
+  petView: 'street' | 'drone';
+  petMoving: boolean;
   onSelect: (id: string) => void;
 }
 
@@ -31,7 +34,7 @@ type SceneRuntime = {
   focus: (buildingId: string) => void;
   reset: () => void;
   capture: () => string | null;
-  update: (props: Pick<SceneProps, 'hour' | 'selectedId' | 'selectedFloor' | 'heatmap' | 'flow' | 'petGuide' | 'petPhase' | 'petMessage' | 'petActivity'>) => void;
+  update: (props: Pick<SceneProps, 'hour' | 'selectedId' | 'selectedFloor' | 'heatmap' | 'flow' | 'petGuide' | 'petPhase' | 'petMessage' | 'petActivity' | 'petView' | 'petMoving'>) => void;
   dispose: () => void;
 };
 
@@ -94,11 +97,12 @@ function createGuideSheep(): GuideSheep {
   return { group, feet, eyes, eyelids };
 }
 
-function animateGuideSheep(sheep: GuideSheep, activity: PetActivity, frame: number, reducedMotion: boolean): number {
+function animateGuideSheep(sheep: GuideSheep, activity: PetActivity, frame: number, reducedMotion: boolean, size = 5): number {
   const motion = reducedMotion ? 0 : 1;
   const step = Math.sin(frame * .12);
-  sheep.group.rotation.set(activity === 'graze' ? .32 : 0, 0, activity === 'wave' ? .1 + step * .12 * motion : activity === 'dance' ? step * .17 * motion : 0);
-  sheep.group.scale.set(5, activity === 'nap' ? 3.65 : 5, 5);
+  sheep.group.rotation.x = activity === 'graze' ? .32 : 0;
+  sheep.group.rotation.z = activity === 'wave' ? .1 + step * .12 * motion : activity === 'dance' ? step * .17 * motion : 0;
+  sheep.group.scale.set(size, activity === 'nap' ? size * .73 : size, size);
   const closed = activity === 'nap' || (!reducedMotion && frame % 180 < 5);
   sheep.eyes.forEach(eye => { eye.visible = !closed; });
   sheep.eyelids.forEach(lid => { lid.visible = closed; });
@@ -345,8 +349,13 @@ function makeScene(container: HTMLDivElement, labels: HTMLDivElement, campus: Ca
   speechCloud.hidden = true;
   labels.appendChild(speechCloud);
 
-  let state: Pick<SceneProps, 'hour' | 'selectedId' | 'selectedFloor' | 'heatmap' | 'flow' | 'petGuide' | 'petPhase' | 'petMessage' | 'petActivity'> = { hour: 16, selectedId: null, selectedFloor: null, heatmap: false, flow: true, petGuide: false, petPhase: 'desktop', petMessage: null, petActivity: 'walk' };
+  let state: Pick<SceneProps, 'hour' | 'selectedId' | 'selectedFloor' | 'heatmap' | 'flow' | 'petGuide' | 'petPhase' | 'petMessage' | 'petActivity' | 'petView' | 'petMoving'> = { hour: 16, selectedId: null, selectedFloor: null, heatmap: false, flow: true, petGuide: false, petPhase: 'desktop', petMessage: null, petActivity: 'walk', petView: 'street', petMoving: false };
   let phaseStarted = performance.now();
+  let waypoints: GroundPoint[] = [];
+  let routeIndex = 0;
+  let heading = new THREE.Vector3(0, 0, -1);
+  let lastTravelFrame = performance.now();
+  let exitOrigin = new THREE.Vector3(-13, .2, 61);
   let desiredCamera: THREE.Vector3 | null = null;
   let desiredTarget: THREE.Vector3 | null = null;
   let frame = 0;
@@ -431,30 +440,49 @@ function makeScene(container: HTMLDivElement, labels: HTMLDivElement, campus: Ca
       ring.position.set(selected.position[0], .5, selected.position[1]);
       ring.scale.setScalar(1 + Math.sin(frame * .045) * .06);
       if (sheep.group.visible) {
-        const standingY = selected.dimensions[1] + .5;
-        const destination = new THREE.Vector3(selected.position[0] + selected.dimensions[0] * .2, standingY, selected.position[1] + selected.dimensions[2] * .2);
         if (state.petPhase === 'entering' || state.petPhase === 'exiting') {
           const duration = state.petPhase === 'entering' ? 1400 : 1200;
           const progress = reducedMotion ? 1 : Math.min(1, (timestamp - phaseStarted) / duration);
           const eased = progress * progress * (3 - 2 * progress);
-          const portal = state.petPhase === 'entering'
-            ? new THREE.Vector3(destination.x - 34, Math.max(2, standingY - 18), destination.z + 30)
-            : new THREE.Vector3(destination.x + 36, standingY + 17, destination.z + 32);
-          sheep.group.position.copy(state.petPhase === 'entering' ? portal.lerp(destination, eased) : destination.lerp(portal, eased));
-          sheep.group.position.y += reducedMotion ? 0 : Math.sin(progress * Math.PI) * 3;
-          sheep.group.scale.setScalar(5 * (state.petPhase === 'entering' ? .55 + .45 * eased : 1 - .55 * eased));
+          const spawn = new THREE.Vector3(-13, .2, 61);
+          const portal = state.petPhase === 'entering' ? new THREE.Vector3(-39, 13, 82) : exitOrigin.clone().addScaledVector(heading, 22).add(new THREE.Vector3(0, 12, 0));
+          sheep.group.position.copy(state.petPhase === 'entering' ? portal.lerp(spawn, eased) : exitOrigin.clone().lerp(portal, eased));
+          sheep.group.position.y += reducedMotion ? 0 : Math.sin(progress * Math.PI) * 1.3;
+          sheep.group.scale.setScalar(2.2 * (state.petPhase === 'entering' ? .7 + .3 * eased : 1 - .5 * eased));
           sheep.group.rotation.set(0, 0, 0);
         } else {
-          if (sheep.group.position.lengthSq() === 0) sheep.group.position.copy(destination);
-          sheep.group.position.lerp(destination, .09);
-          sheep.group.position.y = standingY + animateGuideSheep(sheep, state.petActivity, frame, reducedMotion);
+          const next = waypoints[routeIndex];
+          if (next && state.petMoving) {
+            const dx = next.x - sheep.group.position.x;
+            const dz = next.z - sheep.group.position.z;
+            const distance = Math.hypot(dx, dz);
+            const step = reducedMotion ? distance : Math.min(distance, Math.min(50, timestamp - lastTravelFrame) * .024);
+            if (distance > .01) {
+              heading.set(dx / distance, 0, dz / distance);
+              sheep.group.position.x += heading.x * step;
+              sheep.group.position.z += heading.z * step;
+            }
+            if (distance <= step + .05) routeIndex++;
+          }
+          sheep.group.rotation.y = Math.atan2(heading.x, heading.z);
+          sheep.group.position.y = .2 + animateGuideSheep(sheep, next && state.petMoving ? 'walk' : state.petActivity, frame, reducedMotion, state.petView === 'drone' ? 2.4 : 1.8);
         }
       }
+    }
+    lastTravelFrame = timestamp;
+    if (sheep.group.visible && state.petPhase === 'touring') {
+      const position = sheep.group.position;
+      const drone = state.petView === 'drone';
+      const follow = drone ? position.clone().add(new THREE.Vector3(0, 55, 23)) : position.clone().addScaledVector(heading, -13).add(new THREE.Vector3(0, 7, 0));
+      const look = position.clone().addScaledVector(heading, drone ? 0 : 9).add(new THREE.Vector3(0, drone ? 0 : 2.6, 0));
+      camera.position.lerp(follow, reducedMotion ? 1 : .09);
+      controls.target.lerp(look, reducedMotion ? 1 : .09);
+      controls.update();
     }
     speechCloud.hidden = !sheep.group.visible || !state.petMessage;
     if (!speechCloud.hidden) {
       if (speechCloud.textContent !== state.petMessage) speechCloud.textContent = state.petMessage;
-      const point = sheep.group.position.clone().add(new THREE.Vector3(0, 13, 0)).project(camera);
+      const point = sheep.group.position.clone().add(new THREE.Vector3(0, 5, 0)).project(camera);
       speechCloud.hidden = point.z < -1 || point.z > 1 || Math.abs(point.x) > 1.15 || Math.abs(point.y) > 1.15;
       speechCloud.style.left = `${Math.max(115, Math.min(container.clientWidth - 115, (point.x * .5 + .5) * container.clientWidth))}px`;
       speechCloud.style.top = `${Math.max(80, Math.min(container.clientHeight - 30, (-point.y * .5 + .5) * container.clientHeight))}px`;
@@ -485,14 +513,32 @@ function makeScene(container: HTMLDivElement, labels: HTMLDivElement, campus: Ca
   return {
     focus: buildingId => {
       const building = campus.buildings.find(item => item.id === buildingId);
-      if (!building) return;
+      if (!building || state.petGuide) return;
       desiredTarget = new THREE.Vector3(building.position[0], building.dimensions[1] * .45, building.position[1]);
       const zoom = container.clientWidth < 600 ? .65 : 1;
       desiredCamera = new THREE.Vector3(building.position[0] + 41 * zoom, building.dimensions[1] + 45 * zoom, building.position[1] + 55 * zoom);
     },
     reset: () => { desiredTarget = new THREE.Vector3(0, 4, 0); desiredCamera = container.clientWidth < 760 ? new THREE.Vector3(85, 220, 230) : new THREE.Vector3(85, 145, 155); },
     capture: () => { renderer.render(scene, camera); return renderer.domElement.toDataURL('image/png'); },
-    update: next => { if (state.petPhase !== next.petPhase) phaseStarted = performance.now(); state = next; applyState(); },
+    update: next => {
+      if (state.petPhase !== next.petPhase) {
+        phaseStarted = performance.now();
+        if (next.petPhase === 'exiting') exitOrigin = sheep.group.position.clone();
+      }
+      if (next.petGuide && (!state.petGuide || state.selectedId !== next.selectedId)) {
+        if (!state.petGuide) sheep.group.position.set(-13, .2, 61);
+        const building = campus.buildings.find(item => item.id === next.selectedId);
+        waypoints = building ? streetRoute({ x: sheep.group.position.x, z: sheep.group.position.z }, roadAccess(building)).slice(1) : [];
+        routeIndex = 0;
+        desiredCamera = desiredTarget = null;
+      }
+      if (state.petGuide && !next.petGuide) {
+        desiredTarget = new THREE.Vector3(0, 4, 0);
+        desiredCamera = new THREE.Vector3(85, 145, 155);
+      }
+      state = next;
+      applyState();
+    },
     dispose: () => {
       disposed = true;
       cancelAnimationFrame(animation);
@@ -535,8 +581,8 @@ export const CampusScene3D = forwardRef<SceneHandle, SceneProps>(function Campus
   }, [props.campus]);
 
   useEffect(() => {
-    runtime.current?.update({ hour: props.hour, selectedId: props.selectedId, selectedFloor: props.selectedFloor, heatmap: props.heatmap, flow: props.flow, petGuide: props.petGuide, petPhase: props.petPhase, petMessage: props.petMessage, petActivity: props.petActivity });
-  }, [props.hour, props.selectedId, props.selectedFloor, props.heatmap, props.flow, props.petGuide, props.petPhase, props.petMessage, props.petActivity, props.campus]);
+    runtime.current?.update({ hour: props.hour, selectedId: props.selectedId, selectedFloor: props.selectedFloor, heatmap: props.heatmap, flow: props.flow, petGuide: props.petGuide, petPhase: props.petPhase, petMessage: props.petMessage, petActivity: props.petActivity, petView: props.petView, petMoving: props.petMoving });
+  }, [props.hour, props.selectedId, props.selectedFloor, props.heatmap, props.flow, props.petGuide, props.petPhase, props.petMessage, props.petActivity, props.petView, props.petMoving, props.campus]);
 
   return <div className="scene-root" aria-label={`Interactive 3D map of ${props.campus.name}`}>
     <div className="scene-canvas" ref={container} />
