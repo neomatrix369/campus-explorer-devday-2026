@@ -7,7 +7,7 @@ import { recommendStudySpot, parseStudyQuery, rankStudySpaces, formatHour, sunSt
 import { campusGeoJson, campusPdf, downloadBlob, parseBlueprint, parseGeoJsonBuildings, synthesizeBlueprint } from './utils/mapExports.ts';
 import { createSoundscape, type SoundMode } from './utils/soundscape.ts';
 import { startNarration } from './utils/narration.ts';
-import { CampusScene3D, type PetPhase, type SceneHandle } from './components/CampusScene3D.tsx';
+import { CampusScene3D, type PetActivity, type PetPhase, type SceneHandle } from './components/CampusScene3D.tsx';
 import { BuildingInspector, LeftRail } from './components/StudyPanels.tsx';
 import { FloorExplorer } from './components/FloorExplorer.tsx';
 
@@ -77,6 +77,9 @@ export default function App() {
   const [tourStarted, setTourStarted] = useState(false);
   const [petTour, setPetTour] = useState(false);
   const [petPhase, setPetPhase] = useState<PetPhase>('desktop');
+  const [petMessage, setPetMessage] = useState<string | null>(null);
+  const [petActivity, setPetActivity] = useState<PetActivity | null>(null);
+  const [petView, setPetView] = useState<'street' | 'drone'>('street');
   const [tourIndex, setTourIndex] = useState(0);
   const [tourLoop, setTourLoop] = useState(false);
   const [tourVoice, setTourVoice] = useState(true);
@@ -91,6 +94,13 @@ export default function App() {
   const lastRequest = useRef(0);
   const pendingRequest = useRef<AbortController | null>(null);
   const petTimer = useRef<number | undefined>(undefined);
+  const messageTimer = useRef<number | undefined>(undefined);
+  const showPetMessage = useCallback((message: string, duration = 5200, activity: PetActivity | null = null): void => {
+    window.clearTimeout(messageTimer.current);
+    setPetMessage(message);
+    setPetActivity(activity);
+    messageTimer.current = window.setTimeout(() => { setPetMessage(null); setPetActivity(null); }, duration);
+  }, []);
   const invalidateRecommendation = useCallback(() => {
     lastRequest.current++;
     pendingRequest.current?.abort();
@@ -110,7 +120,7 @@ export default function App() {
 
   useEffect(() => {
     soundRef.current = createSoundscape();
-    return () => { window.clearTimeout(petTimer.current); soundRef.current?.dispose(); };
+    return () => { window.clearTimeout(petTimer.current); window.clearTimeout(messageTimer.current); soundRef.current?.dispose(); };
   }, []);
 
   useEffect(() => {
@@ -191,7 +201,9 @@ export default function App() {
 
   const finishPetExit = useCallback((): void => {
     setTourPlaying(false);
+    window.speechSynthesis?.cancel();
     setPetPhase('exiting');
+    showPetMessage('See you back on the desktop!');
     window.clearTimeout(petTimer.current);
     petTimer.current = window.setTimeout(() => {
       setTourStarted(false);
@@ -199,7 +211,7 @@ export default function App() {
       setPetPhase('desktop');
       void fetch('/api/pet/mode', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'desktop' }) }).catch(() => undefined);
     }, 1300);
-  }, []);
+  }, [showPetMessage]);
 
   useEffect(() => {
     if (!tourPlaying) return;
@@ -210,6 +222,7 @@ export default function App() {
     setSelectedId(stop.buildingId);
     setSelectedFloor(stop.floor);
     setHour(stop.hour);
+    if (petTour) showPetMessage(stop.narration.split('. ')[0] + '.', 5200, 'wave');
     soundRef.current?.cue(520 + tourIndex * 40);
     const focusTimer = window.setTimeout(() => sceneRef.current?.focus(stop.buildingId), 350);
     let nextTimer: number | undefined;
@@ -224,14 +237,16 @@ export default function App() {
     const cancelNarration = tourVoice ? startNarration(stop.narration, TOUR_AUDIO(tourIndex), advance) : () => undefined;
     if (!tourVoice) nextTimer = window.setTimeout(advance, 5500);
     return () => { clearTimeout(focusTimer); if (nextTimer) clearTimeout(nextTimer); cancelNarration(); };
-  }, [tourPlaying, tourIndex, tourLoop, tourVoice, petTour, finishPetExit]);
+  }, [tourPlaying, tourIndex, tourLoop, tourVoice, petTour, finishPetExit, showPetMessage]);
 
   const startTour = (loop: boolean) => { invalidateRecommendation(); setToolPanel('none'); setFloorOpen(false); setTourIndex(0); setTourLoop(loop); setTourStarted(true); setTourPlaying(true); };
   const startPetTour = () => {
     window.clearTimeout(petTimer.current);
+    setPetView('street');
     setPetTour(true);
     setRecommendation(null);
     setPetPhase('entering');
+    showPetMessage('Baa! Follow me into the 3D campus.');
     setCampusId(TOUR_STOPS[0].campusId);
     setSelectedId(TOUR_STOPS[0].buildingId);
     setSelectedFloor(TOUR_STOPS[0].floor);
@@ -248,15 +263,55 @@ export default function App() {
     if (petTour) finishPetExit();
     else { setTourPlaying(false); setTourStarted(false); }
   };
-  const woollysPick = () => {
+  const pauseForWoolly = (): void => {
+    if (petPhase === 'entering') {
+      window.clearTimeout(petTimer.current);
+      setPetPhase('touring');
+    }
     setTourPlaying(false);
+  };
+  const speakWoollyLine = (line: string): void => {
+    window.setTimeout(() => {
+      if (!tourVoice || !('speechSynthesis' in window)) return;
+      window.speechSynthesis.cancel();
+      const voice = new SpeechSynthesisUtterance(line);
+      voice.lang = 'en-GB';
+      voice.rate = .9;
+      voice.pitch = 1.25;
+      window.speechSynthesis.speak(voice);
+    }, 100);
+  };
+  const woollysPick = () => {
+    pauseForWoolly();
+    const line = 'I will sniff out a cosy study seat!';
+    showPetMessage(line, 5200, 'graze');
+    speakWoollyLine(line);
     void ask('quiet seat with charging and water');
   };
   const surpriseStop = () => {
     setRecommendation(null);
+    showPetMessage('Plot twist! Let us explore somewhere new.', 3200, 'dance');
     setTourPlaying(true);
     setTourIndex(index => (index + 1 + Math.floor(Math.random() * (TOUR_STOPS.length - 1))) % TOUR_STOPS.length);
     soundRef.current?.cue(920);
+  };
+  const hearWoolly = (): void => {
+    setSoundMode('lofi');
+    soundRef.current?.setMode('lofi');
+    soundRef.current?.sing();
+    showPetMessage('La la baa!', 5200, 'dance');
+  };
+  const woollySays = (): void => {
+    if (petPhase === 'exiting') return;
+    const lines = [
+      'Baa! A quiet corner and a cup of tea sounds perfect.',
+      'I found more libraries than grass. London is amazing!',
+      'My woolly wisdom: check the official map before you trot over.',
+    ];
+    const line = lines[Math.floor(Math.random() * lines.length)];
+    pauseForWoolly();
+    showPetMessage(line, 7000, 'wave');
+    speakWoollyLine(line);
   };
   useEffect(() => {
     const url = new URL(window.location.href);
@@ -317,20 +372,20 @@ export default function App() {
     } catch (error) { setLabMessage((error as Error).message); }
   };
 
-  return <main className={`app-shell ${panelsHidden ? 'panels-hidden' : ''}`} data-campus={campusId} data-phase={phase} data-pet-playing={petTour && tourPlaying}>
+  return <main className={`app-shell ${panelsHidden ? 'panels-hidden' : ''}`} data-campus={campusId} data-phase={phase} data-pet-playing={petTour && tourPlaying} data-pet-tour={petTour}>
     <header className="topbar">
       <div className="brand"><span className="brand-mark"><Compass size={23} strokeWidth={2.5} /></span><span><strong>CampusExplorer</strong><small>Find a quiet seat before you walk there</small></span></div>
       <nav className="university-tabs" aria-label="University">{UNIVERSITIES.map(item => <button key={item.id} className={university.id === item.id ? 'active' : ''} onClick={() => chooseCampus(item.campuses[0].id)} aria-pressed={university.id === item.id}>{item.shortName}</button>)}</nav>
       <div className="header-actions"><div className="campus-select-wrap"><label className="sr-only" htmlFor="campus-select">Campus</label><select id="campus-select" value={campusId} onChange={event => chooseCampus(event.target.value)}>{university.campuses.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select><ChevronDown size={15} /></div><span className="simulation-chip">Simulated + official map links</span><label className="time-control"><Clock3 size={17} /><span>Time</span><input type="range" min="0" max="23.75" step="0.25" value={hour} onChange={event => setHour(Number(event.target.value))} aria-label="Preview hour" /><strong>{formatHour(hour)}</strong></label><button className="icon-button theme-button" onClick={() => setHour(phase === 'night' ? 13 : 22)} aria-label={phase === 'night' ? 'Show daytime' : 'Show nighttime'}>{phase === 'night' ? <Sun size={18} /> : <Moon size={18} />}</button><button className="icon-button mobile-menu" onClick={() => setMobileOpen(true)} aria-label="Open study finder"><Menu size={21} /></button></div>
     </header>
 
-    <CampusScene3D ref={sceneRef} campus={campus} hour={hour} selectedId={selectedId} selectedFloor={selectedFloor} heatmap={heatmap} flow={flow} trees={trees} context={cityContext} petGuide={petTour && tourStarted} petPhase={petPhase} onSelect={selectBuilding} />
+    <CampusScene3D ref={sceneRef} campus={campus} hour={hour} selectedId={selectedId} selectedFloor={selectedFloor} heatmap={heatmap} flow={flow} trees={trees} context={cityContext} petGuide={petTour && tourStarted} petPhase={petPhase} petMessage={petMessage} petActivity={petActivity ?? (petPhase === 'touring' && !tourPlaying ? 'nap' : 'walk')} petView={petView} petMoving={tourPlaying} onSelect={selectBuilding} />
     <div className="map-attribution">Schematic 3D campus · not a surveyed map <a href={campus.sourceUrl} target="_blank" rel="noreferrer">Official map <ArrowUpRight size={12} /></a></div>
     <LeftRail campus={campus} hour={hour} recommendation={recommendation} usageText={telemetry.queries ? `${telemetry.queries} ${telemetry.queries === 1 ? 'query' : 'queries'} · ${telemetry.modelTokens} model tokens · ${telemetry.unknownCost ? 'some model cost unpriced' : `$${telemetry.costUsd.toFixed(6)} estimated AI cost`} · ${telemetry.lastSource.replace('-', ' ')}` : ''} loading={finding} onAsk={ask} onSelect={selectBuilding} mobileOpen={mobileOpen} onClose={() => setMobileOpen(false)} />
     {selected && <BuildingInspector campus={campus} building={selected} hour={hour} selectedFloor={selectedFloor} onFloor={setSelectedFloor} onExpand={() => setFloorOpen(true)} onClose={() => { setSelectedId(null); setSelectedFloor(null); sceneRef.current?.reset(); }} />}
 
     <div className="map-title"><span className="eyebrow">Explore in 3D</span><strong>{university.shortName} · {campus.name}</strong><span>{campus.location}</span></div>
-    <div className="view-controls"><button onClick={() => sceneRef.current?.reset()}><RotateCcw size={16} /> Overview</button><button onClick={() => sceneRef.current?.view('aerial')}>Aerial</button><button onClick={() => sceneRef.current?.view('street')}>Street</button><button onClick={() => setPanelsHidden(value => !value)} aria-pressed={panelsHidden}>{panelsHidden ? 'Show panels' : 'Hide panels'}</button></div>
+    <div className="view-controls"><button onClick={() => petTour ? setPetView('drone') : sceneRef.current?.reset()}><RotateCcw size={16} /> Overview</button><button onClick={() => petTour ? setPetView('drone') : sceneRef.current?.view('aerial')} aria-pressed={petTour && petView === 'drone'}>{petTour ? '🚁 Drone' : 'Aerial'}</button><button onClick={() => petTour ? setPetView('street') : sceneRef.current?.view('street')} aria-pressed={petTour && petView === 'street'}>{petTour ? '🚶 Follow' : 'Street'}</button><button onClick={() => setPanelsHidden(value => !value)} aria-pressed={panelsHidden}>{panelsHidden ? 'Show panels' : 'Hide panels'}</button></div>
 
     {tourStarted && <div className="tour-banner" role="status">
       <span className="tour-progress">{petTour ? '🐑' : `${tourIndex + 1}/${TOUR_STOPS.length}`}</span>
@@ -343,11 +398,12 @@ export default function App() {
       <button onClick={() => setTourIndex(index => (index + 1) % TOUR_STOPS.length)} aria-label="Next tour stop"><SkipForward size={17} /></button>
       <button onClick={petTour ? surpriseStop : () => { setTourIndex(0); setTourPlaying(true); }} aria-label={petTour ? 'Surprise me with a tour stop' : 'Replay tour'}>{petTour ? <Sparkles size={16} /> : <RotateCcw size={16} />}</button>
       <button onClick={() => setTourVoice(value => !value)} aria-label={tourVoice ? 'Mute tour voice' : 'Enable tour voice'}>{tourVoice ? <Volume2 size={16} /> : <VolumeX size={16} />}</button>
-      <button onClick={() => soundRef.current?.sing()} aria-label="Hear Woolly sing" title="Hear Woolly sing"><Music2 size={16} /></button>
+      <button onClick={hearWoolly} aria-label="Hear Woolly sing" title="Hear Woolly sing"><Music2 size={16} /></button>
+      {petTour && <button onClick={() => setPetView(view => view === 'street' ? 'drone' : 'street')} aria-label={petView === 'street' ? 'Switch to drone view' : 'Switch to street follow'} title={petView === 'street' ? 'Drone view' : 'Street follow'}>{petView === 'street' ? '🚁' : '🚶'}</button>}
       <button onClick={leaveTour} aria-label="Exit tour"><X size={16} /></button>
     </div>}
 
-    <div className="bottom-dock" aria-label="Map controls"><button onClick={() => setToolPanel(toolPanel === 'london' ? 'none' : 'london')}><Map size={17} /> London</button><button onClick={() => setToolPanel(toolPanel === 'view' ? 'none' : 'view')}><Sun size={17} /> View</button><button className={heatmap ? 'active' : ''} onClick={() => setHeatmap(value => !value)} aria-pressed={heatmap}><Layers3 size={17} /> Heatmap</button><button className={flow ? 'active' : ''} onClick={() => setFlow(value => !value)} aria-pressed={flow}><Sparkles size={17} /> Flow</button><span className="dock-divider" /><button onClick={() => tourStarted ? setTourPlaying(value => !value) : startPetTour()}>{tourPlaying ? <Pause size={17} /> : <Play size={17} />} {tourPlaying ? 'Pause tour' : tourStarted ? 'Resume tour' : '🐑 Follow Woolly'}</button>{petTour && <button onClick={woollysPick}><Compass size={17} /> Woolly's quiet pick</button>}<button className={soundMode !== 'off' ? 'active' : ''} onClick={toggleSound} aria-label={`Sound: ${soundMode}. Change soundscape`}>{soundMode === 'off' ? <VolumeX size={17} /> : <Music2 size={17} />} {soundMode === 'off' ? 'Sound off' : soundMode === 'lofi' ? 'Lo-fi' : 'Rain'}</button><span className="dock-divider" /><button onClick={() => setToolPanel(toolPanel === 'photo' ? 'none' : 'photo')}><Camera size={17} /> Photos</button><button onClick={() => setToolPanel(toolPanel === 'exports' ? 'none' : 'exports')}><Download size={17} /> Export</button><button onClick={() => setToolPanel(toolPanel === 'map-lab' ? 'none' : 'map-lab')}><Map size={17} /> Map lab</button></div>
+    <div className="bottom-dock" aria-label="Map controls"><button onClick={() => setToolPanel(toolPanel === 'london' ? 'none' : 'london')}><Map size={17} /> London</button><button onClick={() => setToolPanel(toolPanel === 'view' ? 'none' : 'view')}><Sun size={17} /> View</button><button className={heatmap ? 'active' : ''} onClick={() => setHeatmap(value => !value)} aria-pressed={heatmap}><Layers3 size={17} /> Heatmap</button><button className={flow ? 'active' : ''} onClick={() => setFlow(value => !value)} aria-pressed={flow}><Sparkles size={17} /> Flow</button><span className="dock-divider" /><button onClick={() => tourStarted ? setTourPlaying(value => !value) : startPetTour()}>{tourPlaying ? <Pause size={17} /> : <Play size={17} />} {tourPlaying ? 'Pause tour' : tourStarted ? 'Resume tour' : '🐑 Follow Woolly'}</button>{petTour && <><button onClick={woollysPick}><Compass size={17} /> Woolly's quiet pick</button><button onClick={hearWoolly}><Music2 size={17} /> Hear Woolly</button><button onClick={woollySays}>☁️ Woolly says</button></>}<button className={soundMode !== 'off' ? 'active' : ''} onClick={toggleSound} aria-label={`Sound: ${soundMode}. Change soundscape`}>{soundMode === 'off' ? <VolumeX size={17} /> : <Music2 size={17} />} {soundMode === 'off' ? 'Sound off' : soundMode === 'lofi' ? 'Lo-fi' : 'Rain'}</button><span className="dock-divider" /><button onClick={() => setToolPanel(toolPanel === 'photo' ? 'none' : 'photo')}><Camera size={17} /> Photos</button><button onClick={() => setToolPanel(toolPanel === 'exports' ? 'none' : 'exports')}><Download size={17} /> Export</button><button onClick={() => setToolPanel(toolPanel === 'map-lab' ? 'none' : 'map-lab')}><Map size={17} /> Map lab</button></div>
 
     {toolPanel !== 'none' && <div className={`tool-drawer panel ${toolPanel === 'london' ? 'london-drawer' : ''}`} role="dialog" aria-label={toolPanel === 'photo' ? 'Photo studio' : toolPanel === 'exports' ? 'Map exports' : toolPanel === 'london' ? 'London overview' : toolPanel === 'view' ? 'Scene controls' : 'Map lab'}><div className="tool-heading"><strong>{toolPanel === 'photo' ? 'Photo studio' : toolPanel === 'exports' ? 'Take this map with you' : toolPanel === 'london' ? 'Explore London' : toolPanel === 'view' ? 'Make the view yours' : 'Map lab'}</strong><button className="icon-button" onClick={() => setToolPanel('none')} aria-label="Close tools"><X size={18} /></button></div>
       {toolPanel === 'london' && <div className="tool-content"><Suspense fallback={<p className="helper-text">Opening London map…</p>}><LondonOverview selectedCampus={campusId} onSelect={id => { chooseCampus(id); setToolPanel('none'); setPanelsHidden(false); }} /></Suspense></div>}

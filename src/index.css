@@ -63,6 +63,9 @@ h1, h2, h3 { font-family: var(--font-display); letter-spacing: -.03em; }
 .scene-canvas, .scene-labels { position: absolute; inset: 0; }
 .scene-canvas canvas { width: 100%; height: 100%; display: block; }
 .scene-labels { pointer-events: none; }
+.sheep-cloud { position: absolute; z-index: 12; max-width: 230px; min-width: 130px; padding: 11px 15px; transform: translate(-50%, -100%); border: 2px solid #b7a8e9; border-radius: 24px; background: #fffefb; color: #342c4e; box-shadow: 0 8px 24px rgba(45, 31, 84, .18); text-align: center; font-size: 12px; font-weight: 800; line-height: 1.35; }
+.sheep-cloud::after { content: ''; position: absolute; left: 45%; bottom: -9px; width: 15px; height: 15px; transform: rotate(45deg); border-right: 2px solid #b7a8e9; border-bottom: 2px solid #b7a8e9; background: #fffefb; }
+.sheep-cloud[hidden] { display: none; }
 .map-pin { position: absolute; z-index: 2; display: inline-flex; align-items: center; gap: 6px; transform: translate(-50%, -100%); padding: 6px 9px; white-space: nowrap; background: rgba(255,255,255,.95); border: 1px solid rgba(225,226,227,.9); border-radius: 20px; color: #273039; font-size: 10.5px; font-weight: 700; box-shadow: 0 3px 10px rgba(24,31,34,.11); pointer-events: auto; transition: border-color var(--micro), background var(--micro); }
 .map-pin:hover, .map-pin[data-selected='true'] { border-color: var(--control); background: #fff; }
 .map-pin-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--quiet); flex: 0 0 auto; }
@@ -160,6 +163,7 @@ h1, h2, h3 { font-family: var(--font-display); letter-spacing: -.03em; }
 .inspector-sources a { display: flex; align-items: center; gap: 3px; margin-top: 7px; font-size: 11px; font-weight: 700; }
 
 .view-controls { position: absolute; z-index: 8; bottom: 94px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; padding: 5px; border-radius: 12px; background: rgba(255,255,255,.89); box-shadow: 0 3px 16px rgba(34,40,42,.1); color: var(--muted); font-size: 11px; white-space: nowrap; }
+.app-shell[data-pet-tour="true"] .view-controls { bottom: 150px; }
 .view-controls button { display: flex; align-items: center; gap: 5px; border: 0; border-radius: 9px; padding: 7px 10px; background: white; color: var(--ink); font-size: 11px; font-weight: 800; }
 .bottom-dock { position: absolute; left: 50%; bottom: 19px; transform: translateX(-50%); z-index: 20; display: flex; align-items: center; gap: 3px; max-width: calc(100vw - 40px); padding: 5px; overflow-x: auto; border: 1px solid rgba(220,222,222,.95); border-radius: 13px; background: rgba(255,255,255,.96); box-shadow: var(--shadow); scrollbar-width: none; }
 .bottom-dock button { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 6px; padding: 9px 11px; border: 0; border-radius: 9px; background: transparent; color: #4f5865; white-space: nowrap; font-size: 11.5px; font-weight: 700; }
@@ -278,6 +282,7 @@ h1, h2, h3 { font-family: var(--font-display); letter-spacing: -.03em; }
   .inspector-heading h2 { font-size: 18px; }
   .inspector .stack-preview, .inspector .inspector-note { display: none; }
   .view-controls { bottom: 72px; font-size: 10px; }
+  .app-shell[data-pet-tour="true"] .view-controls { display: none; }
   .view-controls span { display: none; }
   .bottom-dock { left: 8px; right: 8px; bottom: 8px; transform: none; max-width: none; }
   .bottom-dock button { font-size: 10px; padding: 8px; }
@@ -317,15 +322,19 @@ h1, h2, h3 { font-family: var(--font-display); letter-spacing: -.03em; }
 /* The geographic London map needs the viewport; other tools remain compact. */
 .tool-drawer.london-drawer { inset: 88px 20px 88px 20px; width: auto; max-height: none; display: flex; flex-direction: column; overflow: hidden; }
 .london-drawer .tool-content { min-height: 0; flex: 1; }
-.london-overview { height: 100%; display: grid; grid-template-rows: auto minmax(220px, 1fr) auto auto; gap: 9px; }
+.london-overview { height: 100%; display: grid; grid-template-rows: auto minmax(220px, 1fr) auto auto auto; gap: 9px; }
 .london-map-copy { display: flex; align-items: baseline; gap: 12px; color: var(--ink); }
 .london-map-copy span { color: var(--muted); font-size: 12px; }
+.london-map-copy button { margin-left: auto; white-space: nowrap; }
+.london-woolly-marker { width: 52px; height: 52px; display: grid; place-items: center; padding: 2px; border: 2px solid #6554d8; border-radius: 50%; background: #fffdf3; box-shadow: 0 3px 14px #30226277; cursor: pointer; }
+.london-woolly-marker svg { width: 44px; height: 44px; }
+.london-woolly-status { margin: 0; font-size: 12px; font-weight: 700; color: var(--ink); }
 .london-map-frame { position: relative; min-height: 220px; border-radius: 12px; overflow: hidden; background: #e9ede8; }
 .london-map { height: 100%; width: 100%; }
 .campus-map-marker { border: 2px solid white; border-radius: 18px; padding: 5px 10px; color: white; background: #5b4bd8; font-size: 11px; font-weight: 800; box-shadow: 0 2px 9px #25253d55; cursor: pointer; white-space: nowrap; }
 .campus-map-marker.selected { background: #d78535; }
 .campus-map-marker:focus-visible { outline: 3px solid #25253d; outline-offset: 2px; }
-.london-map-loading { position: absolute; z-index: 2; left: 50%; top: 50%; transform: translate(-50%, -50%); padding: 9px 13px; border-radius: 10px; color: var(--ink); background: #fffdf1ec; font-size: 12px; font-weight: 700; box-shadow: 0 2px 12px #1c24351f; pointer-events: none; }
+.london-map-loading { position: absolute; z-index: 2; left: 12px; top: 12px; padding: 9px 13px; border-radius: 10px; color: var(--ink); background: #fffdf1ec; font-size: 12px; font-weight: 700; box-shadow: 0 2px 12px #1c24351f; pointer-events: none; }
 .london-map-fallback { position: absolute; z-index: 1000; left: 12px; bottom: 24px; padding: 8px 10px; border-radius: 8px; background: white; color: var(--ink); font-size: 12px; }
 .london-overview .campus-overview-list { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: 0; }
 .london-overview .campus-overview-list button { min-width: 0; }
@@ -333,7 +342,7 @@ h1, h2, h3 { font-family: var(--font-display); letter-spacing: -.03em; }
 .london-overview .helper-text { margin: 0; }
 @media (max-width: 760px) {
   .tool-drawer.london-drawer { inset: 135px 8px 61px; max-height: none; }
-  .london-overview { grid-template-rows: auto minmax(220px, 1fr) minmax(110px, 175px) auto; }
+  .london-overview { grid-template-rows: auto minmax(220px, 1fr) auto minmax(110px, 175px) auto; }
   .london-map-copy { display: block; }
   .london-map-copy span { display: block; margin-top: 4px; }
   .london-overview .campus-overview-list { grid-template-columns: 1fr; overflow-y: auto; }
