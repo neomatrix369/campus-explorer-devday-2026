@@ -18,6 +18,38 @@ The two pieces communicate over localhost:
 
 The bridge is local-only. It is not an OpenAI Dot or OpenAI Pet account integration.
 
+## Execution Lifecycle
+
+This is the exact execution path for the full pet handoff:
+
+1. Start the web app with `npm run dev`.
+2. Start the native pet with `CAMPUS_URL` pointing at the web app.
+3. The native pet launches as `DesktopPet` and loads the default upstream `esheep64` animation.
+4. The native pet polls `GET /api/pet/mode` with the `X-DesktopPet` headers.
+5. The web app records the latest desktop-pet poll time.
+6. The user clicks `Call Woolly`, or chooses `Call Woolly here` from the desktop pet menu.
+7. The web app uses `POST /api/pet/summon` to publish a short-lived summon id.
+8. The desktop pet sees that summon id on its next poll and moves to the centre of the current display.
+9. The user chooses `Lead CampusExplorer tour` from the desktop pet menu.
+10. The desktop pet posts `tour` to `POST /api/pet/mode`.
+11. The desktop pet opens the web app with `?sheepTour=1`.
+12. The browser starts the 3D pet tour and keeps posting `tour` while the tour is active.
+13. The native desktop pet hides while 3D Woolly leads the tour inside the CampusExplorer scene.
+14. When the browser tour exits, closes, or times out, the web app posts `desktop`.
+15. The native desktop pet sees `desktop` on its next poll and returns to the desktop.
+
+The `tour` mode lease is intentionally short. The browser refreshes it while the tour is active, so a closed tab or crashed browser returns the native pet to desktop mode instead of leaving it hidden.
+
+Execution entry points:
+
+| Entry point | Command or action | Result |
+|---|---|---|
+| Web app | `npm run dev` | Starts `server.ts` and Vite middleware. |
+| Native debug pet | `CAMPUS_URL=http://127.0.0.1:3100 swift run` | Builds and runs `DesktopPet` from `native-pet/.build/`. |
+| Native app bundle | `./build-app.sh && open DesktopPet.app` | Builds and opens a local `.app`. |
+| Browser-only tour | Click `Follow Woolly` | Runs 3D Woolly without the native desktop pet. |
+| Full handoff | Menu-bar or pet menu `Lead CampusExplorer tour` | Desktop pet enters the browser scene and returns after exit. |
+
 ## Current Local State
 
 During development on this Mac, the live `http://localhost:3100` process was still running from the older workspace:
