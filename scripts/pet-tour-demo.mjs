@@ -14,10 +14,16 @@ await page.locator('.scene-canvas canvas').waitFor();
 await page.waitForTimeout(1500);
 await page.getByRole('button', { name: /Follow Woolly/ }).click();
 await page.getByText('Woolly is leading').waitFor();
-for (let index = 0; index < 6; index += 1) {
-  await page.waitForTimeout(2400);
-  if (index < 5) await page.getByRole('button', { name: 'Next tour stop' }).click();
-}
+await page.waitForTimeout(2600);
+await page.getByRole('button', { name: 'Next tour stop' }).click();
+await page.waitForTimeout(2600);
+await page.getByRole('button', { name: 'Surprise me with a tour stop' }).click();
+await page.waitForTimeout(2800);
+await page.getByRole('button', { name: "Woolly's quiet pick" }).click();
+await page.getByText('Woolly found a quiet spot').waitFor();
+await page.waitForTimeout(3500);
+await page.getByRole('button', { name: 'Resume tour' }).first().click();
+await page.waitForTimeout(2600);
 await page.getByRole('button', { name: 'Exit tour' }).click();
 await page.waitForTimeout(1800);
 const video = page.video();
