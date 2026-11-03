@@ -8,7 +8,9 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "lint": "tsc --noEmit",
-    "test": "tsx --test src/utils/campusLogic.test.ts"
+    "test": "tsx --test src/utils/campusLogic.test.ts",
+    "demo-video": "npm --prefix demo-video run demo",
+    "demo-video:dry": "npm --prefix demo-video run dry-run"
   },
   "dependencies": {
     "dotenv": "^17.2.3",
