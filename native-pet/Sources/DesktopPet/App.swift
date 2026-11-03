@@ -202,6 +202,52 @@ final class PetManager: NSObject {
         }
     }
 
+    func showWoollyAbout() {
+        let alert = NSAlert()
+        alert.messageText = "About Pet Wolly"
+        alert.informativeText = """
+        Pet Wolly is a local desktop companion for the CampusExplorer 3D tour.
+
+        Version: \(Self.appVersion)
+        Local bridge: \(campusURL.absoluteString)
+
+        Wolly moves between this desktop and the browser tour over a loopback-only connection. It is not connected to an OpenAI Pet or Dot account.
+        """
+        alert.accessoryView = woollyHistoryView()
+        if let icon = sheet?.icon { alert.icon = icon }
+        alert.addButton(withTitle: "OK")
+        NSApp.activate(ignoringOtherApps: true)
+        alert.runModal()
+    }
+
+    func reloadWoolly() {
+        let alert = NSAlert()
+        alert.messageText = "Reload Pet Wolly?"
+        alert.informativeText = "This starts the current built app again, then closes this copy. Install or build an update first; reload does not download or compile updates."
+        alert.addButton(withTitle: "Reload")
+        alert.addButton(withTitle: "Cancel")
+        NSApp.activate(ignoringOtherApps: true)
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        do {
+            try launchReplacementInstance()
+            NSApp.terminate(nil)
+        } catch {
+            presentError(error)
+        }
+    }
+
+    private func launchReplacementInstance() throws {
+        let replacement = Process()
+        if Bundle.main.bundleURL.pathExtension == "app" {
+            replacement.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+            replacement.arguments = ["-n", Bundle.main.bundleURL.path]
+        } else {
+            replacement.executableURL = URL(fileURLWithPath: CommandLine.arguments[0])
+            replacement.arguments = Array(CommandLine.arguments.dropFirst())
+        }
+        try replacement.run()
+    }
+
     func removeAllPets() {
         let list = pets
         pets.removeAll()
@@ -603,6 +649,51 @@ final class PetManager: NSObject {
         container.addSubview(label)
         return container
     }
+
+    private func woollyHistoryView() -> NSView {
+        let content = """
+        History
+        Created by Mani Sarkar with Codex assistance at the DevDay Exchange London Community Hackathon in London, UK, on 1 November 2026. Pet Wolly joins a browser-based 3D sheep to a local macOS desktop companion through the CampusExplorer bridge.
+
+        Attribution
+        The macOS pet adapts MIT-licensed DesktopPetMac by iappyx, a port of Adriano Petrucci's desktopPet. The selected eSheep animation downloads from the credited upstream catalog on first use.
+
+        Read more
+        Project: https://github.com/neomatrix369/campus-explorer-devday-2026
+        Creator GitHub (@neomatrix369): https://github.com/neomatrix369
+        Creator site: https://neomatrix369.github.io
+        DesktopPetMac: https://github.com/iappyx/DesktopPetMac
+        desktopPet: https://github.com/Adrianotiger/desktopPet
+        """
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 520, height: 280))
+        scroll.hasVerticalScroller = true
+        scroll.borderType = .bezelBorder
+        let textView = NSTextView(frame: scroll.contentView.bounds)
+        textView.isEditable = false
+        textView.isSelectable = true
+        textView.drawsBackground = false
+        textView.autoresizingMask = [.width]
+        textView.textContainerInset = NSSize(width: 6, height: 6)
+        let text = NSMutableAttributedString(string: content, attributes: [.font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)])
+        for urlString in Self.woollyResourceURLs {
+            let range = (text.string as NSString).range(of: urlString)
+            if range.location != NSNotFound, let url = URL(string: urlString) {
+                text.addAttribute(.link, value: url, range: range)
+                text.addAttribute(.foregroundColor, value: NSColor.linkColor, range: range)
+            }
+        }
+        textView.textStorage?.setAttributedString(text)
+        scroll.documentView = textView
+        return scroll
+    }
+
+    private static let woollyResourceURLs = [
+        "https://github.com/neomatrix369/campus-explorer-devday-2026",
+        "https://github.com/neomatrix369",
+        "https://neomatrix369.github.io",
+        "https://github.com/iappyx/DesktopPetMac",
+        "https://github.com/Adrianotiger/desktopPet",
+    ]
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {

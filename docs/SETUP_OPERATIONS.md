@@ -155,6 +155,17 @@ Use `CAMPUS_URL=http://127.0.0.1:3000` if the web app is on port 3000.
 
 The desktop pet appears as a menu-bar app and a floating pet window. It downloads the eSheep animation on first launch and caches it locally.
 
+Right-click the pet and choose **About Pet Wolly…** to see its creator, hackathon origin,
+creation date and place, local bridge address, privacy boundary, version and upstream
+desktop-pet attribution. The dialog also includes Woolly's short history and clickable
+links to the project, creator GitHub profile (`@neomatrix369`), creator site, and upstream
+desktop-pet sources.
+
+The same menu includes **Reload Pet Wolly**. It starts the current built app again and then
+closes the previous copy, which is useful after you have installed or built an update. It does
+not pull source changes or compile a new app; run `./build-app.sh` first when working from this
+repository.
+
 ## Reproduce the Demo Journey
 
 1. Start the web app.
@@ -190,6 +201,96 @@ The debug command `swift run` does not install a permanent app. It builds under:
 ```text
 native-pet/.build/
 ```
+
+## Start Pet Wolly at Login (macOS)
+
+The repository includes an opt-in macOS `launchd` setup. It starts two user-level
+LaunchAgents after you sign in:
+
+1. `org.petwolly.web` keeps the local web bridge running at `http://127.0.0.1:3100`.
+2. `org.petwolly.desktop` waits briefly for that bridge, then starts the built
+   `DesktopPet.app` with the matching `CAMPUS_URL`.
+
+They are user agents, not system daemons: Woolly needs access to your signed-in
+desktop. They do not depend on Codex, an IDE, or a browser being open.
+
+From the repository root, install and start them now:
+
+```bash
+npm run woolly:install-login
+```
+
+The installer builds `native-pet/DesktopPet.app` if it does not already exist,
+writes the two plists under `~/Library/LaunchAgents/`, and stores logs under
+`~/Library/Logs/PetWolly/`. To check the loaded agents:
+
+```bash
+npm run woolly:login-status
+tail -f ~/Library/Logs/PetWolly/web-error.log
+```
+
+To stop automatic startup and unload both agents:
+
+```bash
+npm run woolly:uninstall-login
+```
+
+The web LaunchAgent restarts the bridge if it exits. The desktop agent starts once
+per login; quit Woolly from its menu-bar paw icon as usual.
+
+## Future Login Startup: Windows and Linux
+
+The browser bridge is portable because it is a local Node.js process. The current
+desktop pet is **macOS-only**: it is a Swift/AppKit application, so these sections
+are a design target, not an installation guide or a claim of current support.
+
+All future platforms should preserve the same bridge contract:
+
+- Start the web bridge before the native pet, on a loopback-only URL such as
+  `http://127.0.0.1:3100`.
+- Pass that URL to the native pet through `CAMPUS_URL` (or the platform-equivalent
+  configuration setting).
+- Keep the existing `GET /api/pet/mode`, `POST /api/pet/mode`, and
+  `POST /api/pet/summon` endpoints unchanged.
+- Use a per-user login mechanism, not a system-wide background service: the pet
+  needs the signed-in user's desktop session.
+
+### Windows target
+
+Use two **Task Scheduler** tasks triggered *At log on* for the current user:
+
+1. A bridge task starts the Node.js server and restarts it on failure.
+2. A pet task starts a future signed Windows Pet Wolly executable after the bridge
+   is reachable, configured with `CAMPUS_URL=http://127.0.0.1:3100`.
+
+The implementation should avoid a Windows Service because services do not safely
+own an interactive desktop window. It should use absolute paths to Node.js and the
+installed pet executable, write logs under `%LOCALAPPDATA%\\PetWolly\\logs`, and
+provide install, status and uninstall commands. The web bridge can be run on
+Windows today; the native animated pet requires a Windows implementation first.
+
+### Linux target
+
+Use two **systemd user services** enabled with `systemctl --user enable --now`:
+
+1. `pet-wolly-web.service` runs the Node.js bridge and uses `Restart=on-failure`.
+2. `pet-wolly-desktop.service` starts a future Linux desktop-pet executable after
+   the bridge is reachable, with the same `CAMPUS_URL` value.
+
+Do not use a system-level unit: the pet needs a graphical user session. The desktop
+service must also support the active display stack (Wayland or X11), while logs
+should go to the user journal and/or `~/.local/state/pet-wolly/`. The web bridge can
+run on Linux today; a native Linux pet must be built and validated before startup
+automation is shipped.
+
+### Delivery checklist for either platform
+
+1. Build a native pet that can show a transparent, click-through desktop window.
+2. Verify the local bridge handoff, summon, tour and return-to-desktop lifecycle.
+3. Package the executable with a trusted signing/distribution path for that OS.
+4. Add a user-session startup installer, status command, logs and clean uninstall.
+5. Test fresh login, bridge restart, pet exit, offline first-run behaviour and
+   browser-only fallback.
 
 ## Configuration Reference
 

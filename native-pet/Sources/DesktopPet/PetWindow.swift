@@ -850,6 +850,9 @@ final class PetWindow: NSWindow {
         menu.addItem(withTitle: "Find a quiet study spot", action: #selector(menuFindQuietSpot), keyEquivalent: "").target = self
         menu.addItem(withTitle: "Hear Woolly sing", action: #selector(menuSing), keyEquivalent: "").target = self
         menu.addItem(withTitle: "Woolly says…", action: #selector(menuSay), keyEquivalent: "").target = self
+        menu.addItem(.separator())
+        menu.addItem(withTitle: "Reload Pet Wolly", action: #selector(menuReloadWoolly), keyEquivalent: "").target = self
+        menu.addItem(withTitle: "About Pet Wolly…", action: #selector(menuAboutWoolly), keyEquivalent: "").target = self
         menu.addItem(withTitle: "Remove this pet", action: #selector(menuRemove), keyEquivalent: "").target = self
 
         let debug = NSMenu()
@@ -893,6 +896,8 @@ final class PetWindow: NSWindow {
     @objc private func menuFindQuietSpot() { manager?.findQuietSpot() }
     @objc private func menuSing() { manager?.sing() }
     @objc private func menuSay() { manager?.saySomethingFun() }
+    @objc private func menuReloadWoolly() { manager?.reloadWoolly() }
+    @objc private func menuAboutWoolly() { manager?.showWoollyAbout() }
     @objc private func menuJump(_ sender: NSMenuItem) { setNewAnimation(sender.tag) }
     @objc private func menuSpawn(_ sender: NSMenuItem) { play(forceSpawn: sender.tag) }
 }

@@ -9,6 +9,9 @@
     "preview": "vite preview",
     "lint": "tsc --noEmit",
     "test": "tsx --test src/utils/campusLogic.test.ts",
+    "woolly:install-login": "bash scripts/install-woolly-login.sh install",
+    "woolly:uninstall-login": "bash scripts/install-woolly-login.sh uninstall",
+    "woolly:login-status": "bash scripts/install-woolly-login.sh status",
     "demo-video": "npm --prefix demo-video run demo",
     "demo-video:dry": "npm --prefix demo-video run dry-run"
   },
